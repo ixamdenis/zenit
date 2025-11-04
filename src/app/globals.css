@@ -1,0 +1,181 @@
+/* src/app/globals.css */
+@import "tailwindcss";
+
+/* =========================================================
+   TEMA CLARO (forzado) + tokens de marca Zenit
+   ======================================================= */
+:root {
+    color-scheme: light;
+
+    /* Branding */
+    --brand-primary: #2b3f75;
+    /* azul Zenit */
+    --brand-secondary: #003b44;
+    /* teal oscuro */
+    --brand-accent: #e45a3f;
+    /* acento naranja */
+    --brand-success: #415e51;
+    --brand-info: #759ea5;
+    --brand-muted: #b9cbd7;
+    --brand-warn: #e2c8aa;
+
+    /* Base UI (off-white para descanso visual) */
+    --bg: #f6f8fb;
+    --fg: #0a0a0a;
+    --card: #ffffff;
+    --card-border: #e6e9ee;
+    --control-bg: #ffffff;
+    --control-fg: #0a0a0a;
+
+    /* Foco */
+    --ring: var(--brand-primary);
+
+    /* Superficies sutiles para chips/nav */
+    --chip-bg: color-mix(in srgb, var(--brand-muted) 22%, transparent);
+
+    /* Sombras */
+    --shadow-sm: 0 1px 2px rgba(6, 24, 44, 0.04),
+        0 1px 1px rgba(6, 24, 44, 0.06);
+    --shadow-md: 0 6px 10px rgba(6, 24, 44, 0.06),
+        0 2px 4px rgba(6, 24, 44, 0.04);
+    --shadow-lg: 0 12px 20px rgba(6, 24, 44, 0.08),
+        0 3px 6px rgba(6, 24, 44, 0.06);
+}
+
+/* =========================================================
+   Tipografías
+   ======================================================= */
+/* next/font nos da variables: --font-poppins, --font-crimson */
+html,
+body {
+    padding: 0;
+    margin: 0;
+}
+
+body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-poppins), ui-sans-serif, system-ui, -apple-system,
+        Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* Utilidad para usar Crimson Pro cuando la quieras (títulos puntuales) */
+.font-brand-serif {
+    font-family: var(--font-crimson), Georgia, "Times New Roman", serif;
+}
+
+/* Contenedor */
+.container-app {
+    @apply max-w-6xl mx-auto px-4;
+}
+
+/* =========================================================
+   Utilidades de color/branding
+   ======================================================= */
+.text-brand {
+    color: var(--brand-primary);
+}
+
+.bg-brand {
+    background: var(--brand-primary);
+}
+
+.border-brand {
+    border-color: var(--brand-primary);
+}
+
+.text-accent {
+    color: var(--brand-accent);
+}
+
+.bg-accent {
+    background: var(--brand-accent);
+}
+
+.text-muted {
+    color: #6b7280;
+}
+
+/* neutral-500 legible sobre claro */
+
+/* =========================================================
+   Componentes base
+   ======================================================= */
+.card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    box-shadow: var(--shadow-sm);
+    @apply rounded-2xl p-4;
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
+    transition: box-shadow 120ms;
+}
+
+.input {
+    background: var(--control-bg);
+    color: var(--control-fg);
+    border: 1px solid var(--card-border);
+    @apply w-full rounded-xl px-3 py-2 outline-none;
+}
+
+.input:focus {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
+    border-color: var(--ring);
+}
+
+/* Dropdowns nativos */
+select,
+option {
+    color: var(--control-fg);
+    background: var(--control-bg);
+}
+
+/* Botones */
+.btn {
+    @apply inline-flex items-center justify-center rounded-2xl px-4 py-2 font-medium transition;
+    @apply disabled:opacity-60 disabled:cursor-not-allowed;
+    border: 1px solid transparent;
+    box-shadow: var(--shadow-sm);
+}
+
+.btn:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.btn-primary {
+    background: var(--brand-primary);
+    color: #ffffff;
+}
+
+.btn-primary:hover {
+    filter: brightness(1.05);
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--fg);
+    border-color: var(--card-border);
+}
+
+.btn-outline:hover {
+    background: var(--chip-bg);
+}
+
+/* Chips/Badges */
+.badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+    background: var(--chip-bg);
+    color: #1f2937;
+}
+
+/* Headings base (usan Poppins). 
+   Si querés ese toque editorial: agrega 'font-brand-serif' a un título puntual. */
+.h1 {
+    @apply text-2xl font-bold;
+}
+
+.h2 {
+    @apply text-lg font-semibold;
+}

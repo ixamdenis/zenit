@@ -1,0 +1,23 @@
+# Node / Next / build
+node_modules/
+.next/
+dist/
+out/
+.cache/
+coverage/
+
+# Env & local data
+.env
+.env.local
+.env.*.local
+
+# Prisma
+prisma/dev.db
+prisma/dev.db-journal
+prisma/migrations/*/steps.json
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json

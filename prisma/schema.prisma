@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  RECEPCION
+  PROFESIONAL
+  PACIENTE
+}
+
+enum AppointmentStatus {
+  RESERVADO
+  CONFIRMADO
+  CANCELADO
+  ASISTIDO
+  AUSENTE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELED
+}
+
+model User {
+  id        String               @id @default(cuid())
+  email     String               @unique
+  password  String
+  role      Role                 @default(PACIENTE)
+  createdAt DateTime             @default(now())
+  patient   PatientProfile?
+  prof      ProfessionalProfile?
+}
+
+model PatientProfile {
+  id          String        @id @default(cuid())
+  user        User          @relation(fields: [userId], references: [id])
+  userId      String        @unique
+  nombre      String
+  apellido    String
+  telefono    String?
+  emailNotif  String?
+  Appointment Appointment[]
+}
+
+model ProfessionalProfile {
+  id             String         @id @default(cuid())
+  user           User           @relation(fields: [userId], references: [id])
+  userId         String         @unique
+  nombre         String
+  apellido       String
+  especialidad   String?
+  colorAgenda    String?
+  availabilities Availability[]
+  appointments   Appointment[]
+}
+
+model Service {
+  id                  String        @id @default(cuid())
+  nombre              String
+  duracionMin         Int
+  precioBase          Int
+  requierePagoPrevio  Boolean       @default(false)
+  penalidadPorcentaje Float?
+  appointments        Appointment[]
+}
+
+model Room {
+  id             String         @id @default(cuid())
+  nombre         String         @unique
+  appointments   Appointment[]
+  availabilities Availability[]
+}
+
+model Availability {
+  id             String              @id @default(cuid())
+  professional   ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  professionalId String
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  roomId         String?
+  room           Room?               @relation(fields: [roomId], references: [id])
+  activaDesde    DateTime?
+  activaHasta    DateTime?
+}
+
+model Appointment {
+  id             String              @id @default(cuid())
+  patient        PatientProfile      @relation(fields: [patientId], references: [id])
+  patientId      String
+  professional   ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  professionalId String
+  service        Service             @relation(fields: [serviceId], references: [id])
+  serviceId      String
+  roomId         String?
+  room           Room?               @relation(fields: [roomId], references: [id])
+  fecha          DateTime
+  horaFin        DateTime
+  estado         AppointmentStatus   @default(RESERVADO)
+  createdAt      DateTime            @default(now())
+  cancellation   Cancellation?
+  payments       Payment[]
+}
+
+model Cancellation {
+  id               String      @id @default(cuid())
+  appointment      Appointment @relation(fields: [appointmentId], references: [id])
+  appointmentId    String      @unique
+  who              String
+  reason           String?
+  penalidadCobrada Boolean     @default(false)
+  penalidadMonto   Int         @default(0)
+  createdAt        DateTime    @default(now())
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+  appointmentId String
+  // Desglose
+  amountService Int           @default(0)
+  amountPenalty Int           @default(0)
+  amountTotal   Int           @default(0)
+  status        PaymentStatus @default(PENDING)
+  note          String?
+  createdAt     DateTime      @default(now())
+
+  @@index([appointmentId])
+}
