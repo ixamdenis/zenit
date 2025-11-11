@@ -1,7 +1,8 @@
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, AppointmentStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -12,6 +13,12 @@ function addMinutes(date: Date, minutes: number) {
 type Body = {
     appointmentId: string;
     newStartISO: string; // nueva fecha/hora (puede ser otro día)
+};
+
+// Definición de tipo simplificada para el item en el array de disponibilidad
+type AvailabilityItem = {
+    startTime: string;
+    endTime: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -41,7 +48,8 @@ export async function POST(req: NextRequest) {
             where: { professionalId: appt.professionalId, dayOfWeek }
         });
 
-        const withinAvailability = avail.some(a => {
+        // Corregido: 'a' tiene el tipo AvailabilityItem para evitar el error 'implicit any'
+        const withinAvailability = avail.some((a: AvailabilityItem) => {
             const [sh, sm] = a.startTime.split(":").map(Number);
             const [eh, em] = a.endTime.split(":").map(Number);
             const base = new Date(startAt);
@@ -59,7 +67,7 @@ export async function POST(req: NextRequest) {
             where: {
                 professionalId: appt.professionalId,
                 id: { not: appt.id },
-                estado: { in: ["RESERVADO", "CONFIRMADO"] },
+                estado: { in: [AppointmentStatus.RESERVADO, AppointmentStatus.CONFIRMADO] },
                 OR: [{ AND: [{ fecha: { lt: endAt } }, { horaFin: { gt: startAt } }] }]
             }
         });
@@ -78,10 +86,6 @@ export async function POST(req: NextRequest) {
         const amountTotal = amountService + penalidad;
 
         // Actualizar turno + generar "Payment" PENDING
-        // Nota: si VSCode sigue sin reconocer prisma.payment, corré:
-        //   npx prisma generate  (y reiniciá el TS Server)
-        // Para que no te frene el tipado, usamos bracket-notation:
-        //   (prisma as any)["payment"].create(...)
         const [updated, payment] = await prisma.$transaction([
             prisma.appointment.update({
                 where: { id: appt.id },

@@ -1,9 +1,17 @@
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+
+// Definiciones de tipos simplificados para evitar errores de "implicit any"
+// Estos tipos coinciden con la estructura de datos que traen las consultas de Prisma
+type ProfessionalDump = { id: string; nombre: string; apellido: string; user: { email: string } };
+type PatientDump = { id: string; nombre: string; apellido: string; user: { email: string } };
+type ServiceDump = { id: string; nombre: string; duracionMin: number; precioBase: number };
+type RoomDump = { id: string; nombre: string };
 
 export async function GET() {
     try {
@@ -19,25 +27,29 @@ export async function GET() {
         const rooms = await prisma.room.findMany({ orderBy: { nombre: "asc" } });
 
         return NextResponse.json({
-            professionals: professionals.map(p => ({
+            // Se usa el tipo ProfessionalDump para evitar errores de 'implicit any' en 'p'
+            professionals: professionals.map((p: ProfessionalDump) => ({
                 professionalId: p.id,
                 nombre: p.nombre,
                 apellido: p.apellido,
                 userEmail: p.user.email
             })),
-            patients: patients.map(p => ({
+            // Se usa el tipo PatientDump para evitar errores de 'implicit any' en 'p'
+            patients: patients.map((p: PatientDump) => ({
                 patientId: p.id,
                 nombre: p.nombre,
                 apellido: p.apellido,
                 userEmail: p.user.email
             })),
-            services: services.map(s => ({
+            // Se usa el tipo ServiceDump para evitar errores de 'implicit any' en 's'
+            services: services.map((s: ServiceDump) => ({
                 serviceId: s.id,
                 nombre: s.nombre,
                 duracionMin: s.duracionMin,
                 precioBase: s.precioBase
             })),
-            rooms: rooms.map(r => ({ roomId: r.id, nombre: r.nombre }))
+            // Se usa el tipo RoomDump para evitar errores de 'implicit any' en 'r'
+            rooms: rooms.map((r: RoomDump) => ({ roomId: r.id, nombre: r.nombre }))
         });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
