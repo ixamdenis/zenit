@@ -121,7 +121,19 @@ export default function SolicitarTurnoPage() {
                     <h3 className="font-bold text-amber-800">Pago Requerido</h3>
                     <p className="mt-2">Transferir a:</p>
                     <p className="font-mono text-lg font-bold my-1">{selectedPro.aliasBancario || "(Consultar)"}</p>
-                    <p className="text-xs text-muted">Enviar comprobante por WhatsApp.</p>
+                    <h1 className="text-s text-blue-950 font-bold my-0.5">
+                        Enviar comprobante por WhatsApp al{' '}
+                        <a
+                            href="https://api.whatsapp.com/send/?phone=5492920593967"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline cursor-pointer"
+                        >
+                            2920-593967
+                        </a>
+                        .
+                    </h1>
+                    <h1 className="text-s text-blue-950 font-semibold my-0.5">El turno será confirmado a la brevedad por esa vía.</h1>
                 </div>
                 <button onClick={handleCreateAppointment} disabled={creating} className="btn btn-primary w-full">{creating ? "Reservando..." : "Confirmar Reserva"}</button>
                 <button onClick={() => setStep(1)} disabled={creating} className="btn btn-outline w-full mt-2">Volver</button>

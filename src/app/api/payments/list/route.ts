@@ -26,13 +26,11 @@ export async function GET(req: NextRequest) {
 
         if (date) {
             const { start, end } = ymdToUtcRange(date);
-            // Filtramos por FECHA DEL TURNO (appointment.fecha), no por createdAt del pago
             where.appointment = { fecha: { gte: start, lte: end } };
         }
 
         const rows = await (prisma as any)["payment"].findMany({
             where,
-            // Ordenamos por fecha del turno (y fallback por createdAt por estabilidad)
             orderBy: [
                 { appointment: { fecha: "desc" } },
                 { createdAt: "desc" },
@@ -40,7 +38,9 @@ export async function GET(req: NextRequest) {
             include: {
                 appointment: {
                     include: {
-                        service: true,
+                        // --- CAMBIO: Usamos la nueva relación ---
+                        professionalService: true,
+                        // --- FIN CAMBIO ---
                         patient: { include: { user: true } },
                         professional: { include: { user: true } },
                     },
@@ -51,13 +51,15 @@ export async function GET(req: NextRequest) {
         const data = rows.map((p: any) => ({
             id: p.id,
             status: p.status,
-            createdAt: p.createdAt, // conservamos por si hace falta auditar
+            createdAt: p.createdAt,
             amountService: p.amountService,
             amountPenalty: p.amountPenalty,
             amountTotal: p.amountTotal,
             note: p.note ?? null,
             appointmentId: p.appointmentId,
-            serviceName: p.appointment?.service?.nombre ?? "",
+            // --- CAMBIO: Mapeamos desde professionalService ---
+            serviceName: p.appointment?.professionalService?.nombre ?? "",
+            // --- FIN CAMBIO ---
             patientName:
                 [p.appointment?.patient?.nombre, p.appointment?.patient?.apellido]
                     .filter(Boolean)
@@ -68,7 +70,7 @@ export async function GET(req: NextRequest) {
                     .filter(Boolean)
                     .join(" ")
                     .trim() || p.appointment?.professional?.user?.email || "",
-            apptDate: p.appointment?.fecha ?? null, // ← FECHA EFECTIVA DE LA CONSULTA
+            apptDate: p.appointment?.fecha ?? null,
         }));
 
         return NextResponse.json({ count: data.length, items: data });
