@@ -19,10 +19,11 @@ function addMinutes(date: Date, minutes: number) {
 export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
-        const dateStr = searchParams.get("date");                 // YYYY-MM-DD
+        const dateStr = searchParams.get("date");
         const professionalId = searchParams.get("professionalId");
         const professionalEmail = searchParams.get("professionalEmail");
-        const ignoreAppointmentId = searchParams.get("ignoreAppointmentId"); // opcional (reprogramación)
+        const serviceName = searchParams.get("serviceName");
+        const ignoreAppointmentId = searchParams.get("ignoreAppointmentId");
 
         if (!dateStr || (!professionalId && !professionalEmail)) {
             return NextResponse.json(
@@ -49,14 +50,21 @@ export async function GET(req: NextRequest) {
         });
         if (availability.length === 0) return NextResponse.json({ slots: [], professionalId: prof.id });
 
-        // Duración por defecto desde "Consulta"
-        const service = await prisma.service.findFirst({ where: { nombre: "Consulta" } });
-        const dur = service?.duracionMin ?? 30;
+        // --- CAMBIO: Buscar servicio del profesional ---
+        let dur = 30; // Default
+        if (serviceName) {
+            const service = await prisma.professionalService.findFirst({
+                where: {
+                    nombre: serviceName,
+                    professionalId: prof.id // <--- Filtro clave
+                }
+            });
+            if (service) dur = service.duracionMin;
+        }
 
         const startDay = new Date(base);
         const endDay = new Date(base); endDay.setHours(23, 59, 59, 999);
 
-        // Turnos ya tomados (opcional: ignorar uno para poder reprogramarlo)
         const booked = await prisma.appointment.findMany({
             where: {
                 professionalId: prof.id,

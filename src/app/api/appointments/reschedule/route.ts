@@ -2,53 +2,60 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient, AppointmentStatus } from "@prisma/client";
+import { PrismaClient, AppointmentStatus, Role } from "@prisma/client";
+import { getSession } from "@/lib/session";
 
 const prisma = new PrismaClient();
+const HOURS_WINDOW = 24; // <-- Regla de negocio
 
 function addMinutes(date: Date, minutes: number) {
     return new Date(date.getTime() + minutes * 60000);
 }
 
-type Body = {
-    appointmentId: string;
-    newStartISO: string; // nueva fecha/hora (puede ser otro día)
-};
-
-// Definición de tipo simplificada para el item en el array de disponibilidad
-type AvailabilityItem = {
-    startTime: string;
-    endTime: string;
-};
+type Body = { appointmentId: string; newStartISO: string; };
+type AvailabilityItem = { startTime: string; endTime: string; };
 
 export async function POST(req: NextRequest) {
     try {
+        const session = await getSession(); // Necesitamos saber quién es
         const body = (await req.json()) as Body;
         const { appointmentId, newStartISO } = body || {};
+
         if (!appointmentId || !newStartISO) {
-            return NextResponse.json({ error: "Campos requeridos: appointmentId y newStartISO" }, { status: 400 });
+            return NextResponse.json({ error: "Faltan datos" }, { status: 400 });
         }
 
         const appt = await prisma.appointment.findUnique({
             where: { id: appointmentId },
-            include: { service: true, professional: true }
+            include: { professionalService: true, professional: true }
         });
         if (!appt) return NextResponse.json({ error: "Turno no existe" }, { status: 404 });
 
-        const startAt = new Date(newStartISO);
-        if (isNaN(startAt.getTime())) {
-            return NextResponse.json({ error: "newStartISO inválido" }, { status: 400 });
-        }
-        const dur = appt.service.duracionMin;
-        const endAt = addMinutes(startAt, dur);
+        // --- INICIO: VALIDACIÓN 24HS PARA PACIENTE ---
+        const now = new Date();
+        const hoursToOriginal = (appt.fecha.getTime() - now.getTime()) / 36e5;
 
-        // Validar disponibilidad del NUEVO día
+        if (session?.role === Role.PACIENTE) {
+            if (hoursToOriginal < HOURS_WINDOW) {
+                return NextResponse.json({
+                    error: "Faltan menos de 24hs. No se puede reprogramar, debes cancelar (se retiene la seña) y sacar uno nuevo."
+                }, { status: 403 });
+            }
+        }
+        // --- FIN: VALIDACIÓN ---
+
+        const startAt = new Date(newStartISO);
+        if (isNaN(startAt.getTime())) return NextResponse.json({ error: "Fecha inválida" }, { status: 400 });
+
+        const dur = appt.professionalService.duracionMin;
+        const endAt = addMinutes(startAt, dur);
         const dayOfWeek = startAt.getDay();
+
+        // Verificar disponibilidad del profesional
         const avail = await prisma.availability.findMany({
             where: { professionalId: appt.professionalId, dayOfWeek }
         });
 
-        // Corregido: 'a' tiene el tipo AvailabilityItem para evitar el error 'implicit any'
         const withinAvailability = avail.some((a: AvailabilityItem) => {
             const [sh, sm] = a.startTime.split(":").map(Number);
             const [eh, em] = a.endTime.split(":").map(Number);
@@ -59,10 +66,10 @@ export async function POST(req: NextRequest) {
             return startAt >= aStart && endAt <= aEnd;
         });
         if (!withinAvailability) {
-            return NextResponse.json({ error: "Horario fuera de disponibilidad del profesional" }, { status: 400 });
+            return NextResponse.json({ error: "El profesional no atiende en ese horario" }, { status: 400 });
         }
 
-        // No solapar con otros turnos (ignorando el mismo)
+        // Verificar solapamiento
         const overlap = await prisma.appointment.findFirst({
             where: {
                 professionalId: appt.professionalId,
@@ -71,21 +78,17 @@ export async function POST(req: NextRequest) {
                 OR: [{ AND: [{ fecha: { lt: endAt } }, { horaFin: { gt: startAt } }] }]
             }
         });
-        if (overlap) {
-            return NextResponse.json({ error: "El horario ya está ocupado" }, { status: 409 });
-        }
+        if (overlap) return NextResponse.json({ error: "El horario ya está ocupado" }, { status: 409 });
 
-        // ----- Reglas de cobro -----
-        // Si faltan >=24h para el turno original => penalidad = 0
-        const now = new Date();
-        const hoursToOriginal = (appt.fecha.getTime() - now.getTime()) / 36e5;
+        // Reglas de cobro (para Admin/Pro que sí pueden moverlo <24hs, o Paciente >24hs)
+        // Si es paciente y pasó la validación anterior, penalidad es 0.
         const penalidad = hoursToOriginal >= 24
             ? 0
-            : Math.round(appt.service.precioBase * (appt.service.penalidadPorcentaje ?? 0.5));
-        const amountService = appt.service.precioBase;
+            : Math.round(appt.professionalService.precioBase * (appt.professionalService.penalidadPorcentaje ?? 0.5));
+
+        const amountService = appt.professionalService.precioBase;
         const amountTotal = amountService + penalidad;
 
-        // Actualizar turno + generar "Payment" PENDING
         const [updated, payment] = await prisma.$transaction([
             prisma.appointment.update({
                 where: { id: appt.id },
@@ -97,22 +100,17 @@ export async function POST(req: NextRequest) {
                     amountService,
                     amountPenalty: penalidad,
                     amountTotal,
-                    status: "PENDING",
-                    note: penalidad > 0 ? "Reprogramación <24h" : "Reprogramación sin penalidad (≥24h)"
+                    status: "PENDING", // Se genera nueva orden de pago si hubo cambio, o se mantiene la lógica de seña
+                    note: penalidad > 0 ? "Reprogramación <24h" : "Reprogramación (>24h) - Seña reutilizada"
                 }
             })
         ]);
 
         return NextResponse.json({
             appointment: updated,
-            charge: {
-                amountService,
-                amountPenalty: penalidad,
-                amountTotal,
-                status: payment.status
-            }
+            charge: { amountService, amountPenalty: penalidad, amountTotal, status: payment.status }
         });
     } catch (e: any) {
-        return NextResponse.json({ error: e?.message ?? "Error reprogramando turno" }, { status: 500 });
+        return NextResponse.json({ error: e?.message ?? "Error" }, { status: 500 });
     }
 }

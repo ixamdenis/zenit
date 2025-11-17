@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image"; // <-- Importamos Image
 
 export default function LoginPage() {
     const router = useRouter();
@@ -48,6 +49,19 @@ export default function LoginPage() {
 
     return (
         <div className="max-w-md mx-auto pt-12">
+            {/* --- INICIO: Logo Agregado --- */}
+            <Link href="/" className="flex justify-center mb-6" aria-label="Ir al inicio">
+                <Image
+                    src="/zenit-logo@2x.png"
+                    alt="Zenit"
+                    width={80}
+                    height={80}
+                    className="w-20 h-auto"
+                    priority
+                />
+            </Link>
+            {/* --- FIN: Logo Agregado --- */}
+
             <div className="card">
                 <h1 className="h1 mb-4 text-center">Iniciar Sesión</h1>
                 <form onSubmit={handleSubmit} className="space-y-4">

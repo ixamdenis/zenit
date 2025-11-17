@@ -5,9 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 type DumpData = {
     professionals: { professionalId: string; nombre: string; apellido: string; userEmail: string }[];
     patients: { patientId: string; nombre: string; apellido: string; userEmail: string }[];
-    services: { serviceId: string; nombre: string; duracionMin: number; precioBase: number }[];
-    rooms: { roomId: string; nombre: string }[];
+    // 'services' globales ya no se usan desde aquí
 };
+type Service = { id: string; nombre: string; duracionMin: number; precioBase: number };
 type SlotsResp = { slots: string[]; professionalId?: string; error?: string };
 type ListResp = {
     date: string; count: number;
@@ -15,6 +15,8 @@ type ListResp = {
         id: string; estado: string; startAt: string; endAt: string;
         serviceId: string; serviceName: string; roomId: string | null; roomName: string | null;
         patientId: string; professionalId: string; patientName: string; professionalName: string;
+        paymentId: string | null;
+        paymentStatus: "PENDING" | "PAID" | "CANCELED" | null;
     }[];
     error?: string;
 };
@@ -30,26 +32,30 @@ function toYMD(d: Date) { const y = d.getFullYear(); const m = String(d.getMonth
 
 export default function RecepcionPage() {
     const todayISO = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return toYMD(d); }, []);
+
     const [dump, setDump] = useState<DumpData | null>(null);
+    const [availableServices, setAvailableServices] = useState<Service[]>([]); // <-- Servicios del profesional seleccionado
+
     const [date, setDate] = useState<string>(todayISO);
     const [professionalEmail, setProfessionalEmail] = useState<string>("");
     const [patientEmail, setPatientEmail] = useState<string>("");
-    const [serviceName, setServiceName] = useState<string>("Consulta");
+    const [serviceName, setServiceName] = useState<string>("");
     const [slots, setSlots] = useState<string[]>([]);
     const [selectedSlot, setSelectedSlot] = useState<string>("");
+
     const [list, setList] = useState<ListResp | null>(null);
     const [loadingSlots, setLoadingSlots] = useState(false);
     const [loadingList, setLoadingList] = useState(false);
     const [creating, setCreating] = useState(false);
-    const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-    // Reprogramación
+    const [msg, setMsg] = useState<string>("");
+    const [cancellingId, setCancellingId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editDate, setEditDate] = useState<string>("");
     const [editSlots, setEditSlots] = useState<Record<string, string[]>>({});
     const [editSelected, setEditSelected] = useState<Record<string, string>>({});
-    const [msg, setMsg] = useState<string>("");
 
+    // 1. Cargar Profesionales y Pacientes (Datos base)
     useEffect(() => {
         (async () => {
             const r = await fetch("/api/debug/dump");
@@ -59,10 +65,26 @@ export default function RecepcionPage() {
             setDump(j);
             if (j.professionals?.[0]) setProfessionalEmail(j.professionals[0].userEmail);
             if (j.patients?.[0]) setPatientEmail(j.patients[0].userEmail);
-            if (j.services?.[0]) setServiceName(j.services[0].nombre);
         })().catch(() => { });
     }, []);
 
+    // 2. Cargar Servicios cuando cambia el profesional
+    useEffect(() => {
+        setAvailableServices([]);
+        setServiceName("");
+        if (!professionalEmail) return;
+
+        fetch(`/api/services/list?email=${professionalEmail}`)
+            .then(r => r.json())
+            .then(data => {
+                const s = data.services || [];
+                setAvailableServices(s);
+                if (s.length > 0) setServiceName(s[0].nombre);
+            })
+            .catch(() => setMsg("Error cargando servicios del profesional"));
+    }, [professionalEmail]);
+
+    // 3. Cargar Lista de Turnos
     const loadList = async () => {
         setLoadingList(true);
         const qs = new URLSearchParams({ date });
@@ -73,26 +95,29 @@ export default function RecepcionPage() {
         else setList(data as ListResp);
         setLoadingList(false);
     };
-
     useEffect(() => { loadList().catch(() => { }); /* eslint-disable-next-line */ }, [date, professionalEmail]);
 
+    // 4. Cargar Horarios (Slots)
     const loadSlots = async () => {
         if (!date || !professionalEmail) { setSlots([]); return; }
         setLoadingSlots(true);
         const qs = new URLSearchParams({ date, professionalEmail });
+        if (serviceName) qs.set("serviceName", serviceName);
+
         const r = await fetch(`/api/agenda?${qs.toString()}`);
         const { ok, data, error } = await safeJson<SlotsResp>(r);
         if (!ok) { setMsg(error ?? "Error obteniendo disponibilidad"); setSlots([]); }
         else setSlots((data as SlotsResp)?.slots ?? []);
         setLoadingSlots(false);
     };
-
     useEffect(() => { setSelectedSlot(""); loadSlots().catch(() => { }); /* eslint-disable-next-line */ }, [date, professionalEmail, serviceName]);
+
+    // --- ACCIONES ---
 
     const createAppointment = async () => {
         setMsg("");
         if (!patientEmail || !professionalEmail || !serviceName || !selectedSlot) {
-            setMsg("Completá todos los campos y elegí un horario."); return;
+            setMsg("Completá todos los campos."); return;
         }
         setCreating(true);
         const r = await fetch("/api/appointments", {
@@ -113,8 +138,8 @@ export default function RecepcionPage() {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ appointmentId: id, whoUserId: "recepcion", reason: "Anulado desde recepción", isAdmin: false })
         });
-        const { ok, data, error, status } = await safeJson<any>(r);
-        if (!ok) setMsg(error ?? `Error cancelando turno (HTTP ${status})`);
+        const { ok, data, error } = await safeJson<any>(r);
+        if (!ok) setMsg(error ?? `Error cancelando turno`);
         else {
             const penalty = data?.penalty?.penalidadMonto;
             setMsg(`Turno cancelado.${typeof penalty === "number" ? ` Penalidad estimada: $${penalty}` : ""}`);
@@ -123,6 +148,7 @@ export default function RecepcionPage() {
         setCancellingId(null);
     };
 
+    // Reprogramación (Edit)
     const startEdit = async (a: ListResp["appointments"][number]) => {
         setMsg("");
         setEditingId(a.id);
@@ -131,12 +157,11 @@ export default function RecepcionPage() {
         await loadEditSlots(a, toYMD(cur));
     };
     const loadEditSlots = async (a: ListResp["appointments"][number], ymd: string) => {
-        const qs = new URLSearchParams({ date: ymd, professionalId: a.professionalId, ignoreAppointmentId: a.id });
+        const qs = new URLSearchParams({ date: ymd, professionalId: a.professionalId, ignoreAppointmentId: a.id, serviceName: a.serviceName });
         const r = await fetch(`/api/agenda?${qs.toString()}`);
         const { ok, data, error } = await safeJson<SlotsResp>(r);
-        if (!ok) { setMsg(error ?? "Error cargando horarios para reprogramar"); return; }
-        const s = (data as SlotsResp)?.slots ?? [];
-        setEditSlots(prev => ({ ...prev, [a.id]: s }));
+        if (!ok) { setMsg(error ?? "Error cargando horarios"); return; }
+        setEditSlots(prev => ({ ...prev, [a.id]: (data as SlotsResp)?.slots ?? [] }));
         setEditSelected(prev => ({ ...prev, [a.id]: "" }));
     };
     const onChangeEditDate = async (a: ListResp["appointments"][number], ymd: string) => {
@@ -145,18 +170,17 @@ export default function RecepcionPage() {
     };
     const saveEdit = async (a: ListResp["appointments"][number]) => {
         const pick = editSelected[a.id];
-        if (!pick) { setMsg("Elegí un horario nuevo para reprogramar."); return; }
-        const d = new Date(pick); const hh = String(d.getHours()).padStart(2, "0"); const mm = String(d.getMinutes()).padStart(2, "0"); const ymd = toYMD(d);
-        if (!window.confirm(`¿Confirmás reprogramar el turno a ${ymd} ${hh}:${mm}?`)) return;
+        if (!pick) { setMsg("Elegí un horario nuevo."); return; }
+        if (!window.confirm(`¿Confirmás reprogramar?`)) return;
 
         const r = await fetch("/api/appointments/reschedule", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ appointmentId: a.id, newStartISO: pick })
         });
-        const { ok, data, error, status } = await safeJson<any>(r);
-        if (!ok) { setMsg(error ?? `Error reprogramando (HTTP ${status})`); return; }
-        const total = data?.charge?.amountTotal ?? 0; const serviceAmt = data?.charge?.amountService ?? 0; const penaltyAmt = data?.charge?.amountPenalty ?? 0;
-        setMsg(`Turno reprogramado. A cobrar: $${total} (servicio $${serviceAmt}${penaltyAmt ? ` + penalidad $${penaltyAmt}` : ""}).`);
+        const { ok, data, error } = await safeJson<any>(r);
+        if (!ok) { setMsg(error ?? `Error reprogramando`); return; }
+        const total = data?.charge?.amountTotal ?? 0;
+        setMsg(`Turno reprogramado. A cobrar: $${total}.`);
         setEditingId(null);
         await loadList(); await loadSlots();
     };
@@ -166,7 +190,7 @@ export default function RecepcionPage() {
         <div className="space-y-6">
             <h1 className="h1">Recepción <span className="badge ml-2">Zenit</span></h1>
 
-            {/* Filtros */}
+            {/* Filtros y Selección */}
             <section className="card">
                 <h2 className="h2">Filtros</h2>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -181,7 +205,7 @@ export default function RecepcionPage() {
                             <option value="">-- Elegir profesional --</option>
                             {dump?.professionals?.map((p) => (
                                 <option key={p.professionalId} value={p.userEmail}>
-                                    {p.apellido}, {p.nombre} ({p.userEmail})
+                                    {p.apellido}, {p.nombre}
                                 </option>
                             ))}
                         </select>
@@ -189,9 +213,15 @@ export default function RecepcionPage() {
 
                     <div>
                         <label className="block text-sm font-medium">Servicio</label>
-                        <select className="input mt-1" value={serviceName} onChange={(e) => setServiceName(e.target.value)}>
-                            {dump?.services?.map((s) => (
-                                <option key={s.serviceId} value={s.nombre}>
+                        <select
+                            className="input mt-1"
+                            value={serviceName}
+                            onChange={(e) => setServiceName(e.target.value)}
+                            disabled={!professionalEmail || availableServices.length === 0}
+                        >
+                            {availableServices.length === 0 && <option value="">(Selecciona profesional)</option>}
+                            {availableServices.map((s) => (
+                                <option key={s.id} value={s.nombre}>
                                     {s.nombre} ({s.duracionMin} min)
                                 </option>
                             ))}
@@ -200,7 +230,7 @@ export default function RecepcionPage() {
                 </div>
             </section>
 
-            {/* Crear turno */}
+            {/* Formulario Crear Turno */}
             <section className="card">
                 <h2 className="h2">Crear turno</h2>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -210,7 +240,7 @@ export default function RecepcionPage() {
                             <option value="">-- Elegir paciente --</option>
                             {dump?.patients?.map((p) => (
                                 <option key={p.patientId} value={p.userEmail}>
-                                    {p.apellido}, {p.nombre} ({p.userEmail})
+                                    {p.apellido}, {p.nombre}
                                 </option>
                             ))}
                         </select>
@@ -235,13 +265,11 @@ export default function RecepcionPage() {
                 </div>
             </section>
 
-            {/* Lista del día */}
+            {/* Lista de Turnos */}
             <section className="space-y-3">
                 <div className="flex items-center gap-3">
                     <h2 className="h2">Turnos del día</h2>
-                    <button onClick={loadList} className="btn btn-outline text-sm" disabled={loadingList}>
-                        {loadingList ? "Actualizando..." : "Actualizar"}
-                    </button>
+                    <button onClick={loadList} className="btn btn-outline text-sm" disabled={loadingList}>Actualizar</button>
                 </div>
 
                 {!list?.appointments?.length ? (
@@ -262,7 +290,7 @@ export default function RecepcionPage() {
                                             {h1}–{h2} · {a.serviceName} {a.roomName ? `· ${a.roomName}` : ""}
                                         </div>
                                         <div className="text-sm text-muted">
-                                            Paciente: {a.patientName || "—"} — Profesional: {a.professionalName || "—"}
+                                            Paciente: {a.patientName} — Prof: {a.professionalName}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -279,11 +307,7 @@ export default function RecepcionPage() {
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium">Nuevo horario</label>
-                                            <select
-                                                className="input mt-1"
-                                                value={editSelected[a.id] ?? ""}
-                                                onChange={(e) => setEditSelected(prev => ({ ...prev, [a.id]: e.target.value }))}
-                                            >
+                                            <select className="input mt-1" value={editSelected[a.id] ?? ""} onChange={(e) => setEditSelected(prev => ({ ...prev, [a.id]: e.target.value }))}>
                                                 <option value="">{localSlots.length ? "-- Elegir horario --" : "Sin disponibilidad"}</option>
                                                 {localSlots.map((iso) => {
                                                     const d = new Date(iso); const hh = String(d.getHours()).padStart(2, "0"); const mm = String(d.getMinutes()).padStart(2, "0");

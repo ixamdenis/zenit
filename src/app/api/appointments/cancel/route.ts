@@ -4,45 +4,44 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient, AppointmentStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const HOURS_WINDOW = 12;
+const HOURS_WINDOW = 24; // <-- CAMBIO: Ahora son 24hs
 
 type CancelBody = {
     appointmentId: string;
     whoUserId?: string;
     reason?: string;
     isAdmin?: boolean;
+    cbuReintegro?: string; // <-- CAMBIO: Nuevo campo opcional
 };
 
 export async function POST(req: NextRequest) {
     try {
         const body = (await req.json()) as CancelBody;
+        if (!body.appointmentId) return NextResponse.json({ error: "Falta 'appointmentId'" }, { status: 400 });
 
-        // Validar body
-        if (!body.appointmentId || typeof body.appointmentId !== "string" || body.appointmentId.trim() === "") {
-            return NextResponse.json({ error: "Falta 'appointmentId' en el body" }, { status: 400 });
-        }
-
-        // Buscar turno + servicio
         const appt = await prisma.appointment.findUnique({
             where: { id: body.appointmentId },
-            include: { service: true }
+            include: { professionalService: true }
         });
 
         if (!appt) return NextResponse.json({ error: "Turno no existe" }, { status: 404 });
-        if (appt.estado === "CANCELADO") {
-            return NextResponse.json({ error: "El turno ya está cancelado" }, { status: 400 });
-        }
+        if (appt.estado === "CANCELADO") return NextResponse.json({ error: "El turno ya está cancelado" }, { status: 400 });
 
-        // Ventana de penalidad
         const now = new Date();
         const hoursDiff = (appt.fecha.getTime() - now.getTime()) / 36e5;
+
+        // Si hoursDiff < 24, estamos DENTRO de la ventana de penalidad (menos de 24hs)
         const insideWindow = hoursDiff <= HOURS_WINDOW;
 
-        const percent = appt.service.penalidadPorcentaje ?? 0.5; // 50% por defecto
-        const amount = insideWindow ? Math.round(appt.service.precioBase * percent) : 0;
+        // Cálculo de penalidad
+        // Si es admin, 0.
+        // Si está DENTRO de las 24hs (cancela tarde), se cobra el % definido (ej 50% o 100% de la seña).
+        // Si está FUERA de las 24hs (cancela con tiempo), es 0.
+        const percent = appt.professionalService.penalidadPorcentaje ?? 0.5;
+        const amount = insideWindow ? Math.round(appt.professionalService.precioBase * percent) : 0;
+
         const penalidadMonto = body.isAdmin ? 0 : amount;
 
-        // Transacción (array) => sin uso de tx.cancellation para evitar warnings de tipos antiguos
         const [updated] = await prisma.$transaction([
             prisma.appointment.update({
                 where: { id: body.appointmentId },
@@ -54,7 +53,8 @@ export async function POST(req: NextRequest) {
                     who: body.whoUserId ?? "system",
                     reason: body.reason,
                     penalidadCobrada: false,
-                    penalidadMonto
+                    penalidadMonto,
+                    cbuReintegro: body.cbuReintegro // <-- Guardamos el CBU si vino
                 }
             })
         ]);

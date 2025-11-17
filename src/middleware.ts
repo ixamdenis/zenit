@@ -7,8 +7,13 @@ const protectedRoutes: Record<string, string[]> = {
     "/recepcion": ["ADMIN", "RECEPCION"],
     "/pagos": ["ADMIN", "RECEPCION"],
 
-    // --- NUEVA RUTA PROFESIONAL ---
-    "/profesional": ["PROFESIONAL"], // Protege /profesional y todo lo que esté dentro
+    // Ruta Profesional
+    "/profesional": ["PROFESIONAL"],
+
+    // --- INICIO: CAMBIO ---
+    // Ruta Paciente
+    "/paciente": ["PACIENTE"], // <-- Protegemos /paciente y todo lo que esté dentro
+    // --- FIN: CAMBIO ---
 };
 
 // 2. Define las rutas públicas (donde NO se necesita sesión)
@@ -17,6 +22,8 @@ const publicRoutes = [
     "/register",
     "/api/auth/login",
     "/api/auth/crear-cuenta",
+    "/api/auth/me",
+    "/api/auth/logout",
 ];
 
 export async function middleware(req: NextRequest) {
@@ -27,8 +34,7 @@ export async function middleware(req: NextRequest) {
     const session = await getSession();
 
     if (isPublic) {
-        if (session) {
-            // Si tiene sesión, lo mandamos a la raíz (que redirige a su panel)
+        if (session && !path.startsWith("/api")) {
             return NextResponse.redirect(new URL("/", req.url));
         }
         return NextResponse.next();
@@ -36,12 +42,13 @@ export async function middleware(req: NextRequest) {
 
     // --- Lógica de rutas protegidas ---
     if (!session) {
+        if (path === "/login") {
+            return NextResponse.next();
+        }
         console.log(`[Middleware] Usuario no autenticado intentando acceder a ${path}. Redirigiendo a /login.`);
         return NextResponse.redirect(new URL("/login", req.url));
     }
 
-    // Encontrar la regla de protección que coincida con la ruta
-    // (Ej. /profesional/agenda coincide con /profesional)
     const protectedRouteRule = Object.keys(protectedRoutes).find(
         (routePrefix) => path.startsWith(routePrefix)
     );
@@ -55,19 +62,16 @@ export async function middleware(req: NextRequest) {
         } else {
             // No tiene el rol correcto.
             console.warn(`[Middleware] Usuario ${session.email} (Rol: ${session.role}) sin permiso para ${path}.`);
-            // Lo mandamos a la raíz (que lo redirigirá a su panel correcto)
             return NextResponse.redirect(new URL("/", req.url));
         }
     }
 
-    // Si la ruta no es pública ni está protegida (ej. "/"), déjalo pasar.
-    // (La ruta "/" luego redirigirá al panel correcto)
     return NextResponse.next();
 }
 
 // 3. Configuración del Matcher
 export const config = {
     matcher: [
-        "/((?!api/health|_next/static|_next/image|favicon.ico).*)",
+        "/((?!api/health|_next/static|_next/image|favicon.ico|zenit-logo@2x.png).*)",
     ],
 };

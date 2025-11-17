@@ -1,23 +1,16 @@
 import { PrismaClient } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
+const SALT_ROUNDS = 10;
 
-async function ensureService(
-    nombre: string,
-    duracionMin: number,
-    precioBase: number,
-    requierePagoPrevio = false,
-    penalidadPorcentaje?: number
-) {
-    const existing = await prisma.service.findFirst({ where: { nombre } });
-    if (existing) return existing;
-    return prisma.service.create({
-        data: { nombre, duracionMin, precioBase, requierePagoPrevio, penalidadPorcentaje }
-    });
-}
+// --- INICIO: CAMBIO ---
+// La función 'ensureService' se elimina, ya no la necesitamos.
+// --- FIN: CAMBIO ---
+
 
 async function main() {
-    // Rooms (Room.nombre es @unique)
+    // Rooms
     const [roomA, roomB] = await prisma.$transaction([
         prisma.room.upsert({
             where: { nombre: "Consultorio A" },
@@ -31,43 +24,65 @@ async function main() {
         })
     ]);
 
-    // Service (en el schema actual Service.nombre NO es @unique, por eso no usamos upsert)
-    await ensureService("Consulta", 30, 150000, false, 0.5);
+    // Encriptamos las contraseñas
+    const passAdmin = await bcrypt.hash("admin123456", SALT_ROUNDS);
+    const passRecep = await bcrypt.hash("recep123456", SALT_ROUNDS);
+    const passPro = await bcrypt.hash("pro123", SALT_ROUNDS);
+    const passPac = await bcrypt.hash("pac123", SALT_ROUNDS);
 
-    // Users demo (User.email es @unique)
+    // Creamos el usuario ADMIN
+    await prisma.user.upsert({
+        where: { email: "admin@zenit.local" },
+        update: { password: passAdmin },
+        create: {
+            email: "admin@zenit.local",
+            password: passAdmin,
+            role: "ADMIN"
+        }
+    });
+
+    // Creamos el usuario RECEPCION
     await prisma.user.upsert({
         where: { email: "recepcion@zenit.local" },
-        update: {},
-        create: { email: "recepcion@zenit.local", password: "recep123", role: "RECEPCION" }
+        update: { password: passRecep },
+        create: {
+            email: "recepcion@zenit.local",
+            password: passRecep,
+            role: "RECEPCION"
+        }
     });
 
+    // Usuario Profesional
     const proUser = await prisma.user.upsert({
         where: { email: "pro@zenit.local" },
-        update: {},
-        create: { email: "pro@zenit.local", password: "pro123", role: "PROFESIONAL" }
+        update: { password: passPro },
+        create: { email: "pro@zenit.local", password: passPro, role: "PROFESIONAL" }
     });
 
+    // Usuario Paciente
     const pacUser = await prisma.user.upsert({
         where: { email: "paciente@zenit.local" },
-        update: {},
-        create: { email: "paciente@zenit.local", password: "pac123", role: "PACIENTE" }
+        update: { password: passPac },
+        create: { email: "paciente@zenit.local", password: passPac, role: "PACIENTE" }
     });
 
-    // Perfiles relacionados a los users
+    // Perfil Profesional
     const prof = await prisma.professionalProfile.upsert({
-        where: { userId: proUser.id }, // userId es @unique
+        where: { userId: proUser.id },
         update: {},
         create: {
             userId: proUser.id,
             nombre: "Ana",
             apellido: "García",
             especialidad: "Clínica",
-            colorAgenda: "#4f46e5"
+            colorAgenda: "#4f46e5",
+            aliasBancario: "ana.garcia.zenit" // <-- Agregamos un alias
         }
     });
 
+    // Perfil Paciente
     await prisma.patientProfile.upsert({
-        where: { userId: pacUser.id }, // userId es @unique
+        where: { userId: pacUser.id },
         update: {},
         create: {
             userId: pacUser.id,
@@ -77,25 +92,63 @@ async function main() {
         }
     });
 
-    // Disponibilidad lun-vie 9 a 13 hs para la profesional, en Consultorio A
-    for (const d of [1, 2, 3, 4, 5]) {
-        const exists = await prisma.availability.findFirst({
-            where: { professionalId: prof.id, dayOfWeek: d, startTime: "09:00", endTime: "13:00" }
-        });
-        if (!exists) {
-            await prisma.availability.create({
-                data: {
-                    professionalId: prof.id,
-                    dayOfWeek: d,
-                    startTime: "09:00",
-                    endTime: "13:00",
-                    roomId: roomA.id
-                }
-            });
-        }
-    }
+    // --- INICIO: CAMBIO ---
+    // Creamos los servicios PARA LA PROFESIONAL "Ana García"
 
-    console.log("Seed ok");
+    // 1. Borramos servicios antiguos que pudiera tener (limpieza)
+    await prisma.professionalService.deleteMany({
+        where: { professionalId: prof.id }
+    });
+
+    // 2. Creamos sus nuevos servicios
+    await prisma.professionalService.createMany({
+        data: [
+            {
+                nombre: "Consulta Individual",
+                duracionMin: 45,
+                precioBase: 15000,
+                professionalId: prof.id
+            },
+            {
+                nombre: "Consulta de Pareja",
+                duracionMin: 60,
+                precioBase: 22000,
+                professionalId: prof.id
+            }
+        ]
+    });
+    // --- FIN: CAMBIO ---
+
+
+    // Disponibilidad de Ana García
+    await prisma.availability.deleteMany({ where: { professionalId: prof.id } }); // Limpiamos
+    await prisma.availability.createMany({
+        data: [
+            {
+                professionalId: prof.id,
+                dayOfWeek: 1, // Lunes
+                startTime: "09:00",
+                endTime: "13:00",
+                roomId: roomA.id
+            },
+            {
+                professionalId: prof.id,
+                dayOfWeek: 2, // Martes
+                startTime: "09:00",
+                endTime: "13:00",
+                roomId: roomA.id
+            },
+            {
+                professionalId: prof.id,
+                dayOfWeek: 3, // Miércoles
+                startTime: "14:00",
+                endTime: "18:00",
+                roomId: roomB.id
+            }
+        ]
+    });
+
+    console.log("Seed ok (con servicios por profesional)");
 }
 
 main()

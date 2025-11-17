@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  // Mover el comando 'seed' aquí soluciona el 'warning' de package.json
   seed     = "tsx prisma/seed.ts"
 }
 
@@ -31,59 +30,62 @@ enum PaymentStatus {
 }
 
 model User {
-  id        String                @id @default(cuid())
-  email     String                @unique
+  id        String              @id @default(cuid())
+  email     String              @unique
   password  String
-  role      Role                  @default(PACIENTE)
-  createdAt DateTime              @default(now())
+  role      Role                @default(PACIENTE)
+  createdAt DateTime            @default(now())
   patient   PatientProfile?
   prof      ProfessionalProfile?
 }
 
-// --- PACIENTE: CAMPOS ACTUALIZADOS ---
 model PatientProfile {
-  id              String        @id @default(cuid())
-  user            User          @relation(fields: [userId], references: [id])
-  userId          String        @unique
-  nombre          String
-  apellido        String
-  telefono        String?
-  emailNotif      String?
-  Appointment     Appointment[]
-  // --- Nuevos campos para Paciente ---
-  dni               String?
-  fechaNacimiento   DateTime?
-  localidad         String?
-  tieneObraSocial   Boolean?    @default(false)
-  obraSocialNombre  String?
+  id               String        @id @default(cuid())
+  user             User          @relation(fields: [userId], references: [id])
+  userId           String        @unique
+  nombre           String
+  apellido         String
+  telefono         String?
+  emailNotif       String?
+  Appointment      Appointment[]
+  dni              String?
+  fechaNacimiento  DateTime?
+  localidad        String?
+  tieneObraSocial  Boolean?      @default(false)
+  obraSocialNombre String?
 }
 
-// --- PROFESIONAL: CAMPOS ACTUALIZADOS ---
 model ProfessionalProfile {
-  id                  String         @id @default(cuid())
-  user                User           @relation(fields: [userId], references: [id])
-  userId              String         @unique
+  id                  String                @id @default(cuid())
+  user                User                  @relation(fields: [userId], references: [id])
+  userId              String                @unique
   nombre              String
   apellido            String
   especialidad        String?
   colorAgenda         String?
   availabilities      Availability[]
   appointments        Appointment[]
-  // --- Nuevos campos para Profesional ---
   fechaNacimiento     DateTime?
   matriculaProvincial String?
   matriculaNacional   String?
   aliasBancario       String?
+  // --- CAMBIO: Relación con sus propios servicios ---
+  services            ProfessionalService[]
 }
 
-model Service {
-  id                  String        @id @default(cuid())
+// --- CAMBIO: Nuevo modelo para servicios por profesional ---
+model ProfessionalService {
+  id                  String              @id @default(cuid())
   nombre              String
   duracionMin         Int
   precioBase          Int
-  requierePagoPrevio  Boolean       @default(false)
-  penalidadPorcentaje Float?
+  requierePagoPrevio  Boolean             @default(false)
+  penalidadPorcentaje Float?              @default(0.5)
+  professional        ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  professionalId      String
   appointments        Appointment[]
+
+  @@index([professionalId])
 }
 
 model Room {
@@ -100,28 +102,31 @@ model Availability {
   dayOfWeek      Int
   startTime      String
   endTime        String
-  roomId         String?
   room           Room?               @relation(fields: [roomId], references: [id])
+  roomId         String?
   activaDesde    DateTime?
   activaHasta    DateTime?
 }
 
 model Appointment {
-  id             String              @id @default(cuid())
-  patient        PatientProfile      @relation(fields: [patientId], references: [id])
-  patientId      String
-  professional   ProfessionalProfile @relation(fields: [professionalId], references: [id])
-  professionalId String
-  service        Service             @relation(fields: [serviceId], references: [id])
-  serviceId      String
-  roomId         String?
-  room           Room?               @relation(fields: [roomId], references: [id])
-  fecha          DateTime
-  horaFin        DateTime
-  estado         AppointmentStatus   @default(RESERVADO)
-  createdAt      DateTime            @default(now())
-  cancellation   Cancellation?
-  payments       Payment[]
+  id                    String              @id @default(cuid())
+  patient               PatientProfile      @relation(fields: [patientId], references: [id])
+  patientId             String
+  professional          ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  professionalId        String
+  
+  // --- CAMBIO: Relación con el servicio del profesional ---
+  professionalService   ProfessionalService @relation(fields: [professionalServiceId], references: [id])
+  professionalServiceId String
+
+  room                  Room?               @relation(fields: [roomId], references: [id])
+  roomId                String?
+  fecha                 DateTime
+  horaFin               DateTime
+  estado                AppointmentStatus   @default(RESERVADO)
+  createdAt             DateTime            @default(now())
+  cancellation          Cancellation?
+  payments              Payment[]
 }
 
 model Cancellation {
@@ -132,6 +137,7 @@ model Cancellation {
   reason           String?
   penalidadCobrada Boolean     @default(false)
   penalidadMonto   Int         @default(0)
+  cbuReintegro     String?
   createdAt        DateTime    @default(now())
 }
 
@@ -139,7 +145,6 @@ model Payment {
   id            String        @id @default(cuid())
   appointment   Appointment   @relation(fields: [appointmentId], references: [id])
   appointmentId String
-  // Desglose
   amountService Int           @default(0)
   amountPenalty Int           @default(0)
   amountTotal   Int           @default(0)

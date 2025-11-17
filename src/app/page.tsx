@@ -16,15 +16,12 @@ export default async function HomePage() {
             redirect("/recepcion");
 
         case "PROFESIONAL":
-            // ¡Ahora redirige al panel de profesional!
-            redirect("/profesional/agenda");
+            redirect("/profesional");
 
+        // --- INICIO: CAMBIO ---
         case "PACIENTE":
-            // Cuando creemos el panel de paciente, redirigirá a:
-            // redirect("/paciente/turnos");
-            // Por ahora, lo mandamos a recepción como fallback
-            // (O podríamos mostrar una página de "En construcción")
-            redirect("/recepcion");
+            redirect("/paciente"); // <-- Redirige al nuevo panel de paciente
+        // --- FIN: CAMBIO ---
 
         default:
             redirect("/login");

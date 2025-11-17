@@ -2,11 +2,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import {
+    PrismaClient,
+    Appointment,
+    PatientProfile,
+    ProfessionalProfile,
+    ProfessionalService, // <-- CAMBIO
+    Room,
+    Payment,
+    User
+} from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// Convierte "YYYY-MM-DD" a rango [UTC 00:00, UTC 23:59:59.999]
 function ymdToUtcRange(ymd: string) {
     const [y, m, d] = ymd.split("-").map(Number);
     const start = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0));
@@ -14,10 +22,18 @@ function ymdToUtcRange(ymd: string) {
     return { start, end };
 }
 
+type ApptWithRelations = Appointment & {
+    patient: (PatientProfile & { user: User | null }) | null;
+    professional: (ProfessionalProfile & { user: User | null }) | null;
+    professionalService: ProfessionalService; // <-- CAMBIO
+    room: Room | null;
+    payments: Payment[];
+};
+
 export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
-        const dateStr = searchParams.get("date"); // YYYY-MM-DD
+        const dateStr = searchParams.get("date");
         const professionalEmail = searchParams.get("professionalEmail");
         const professionalId = searchParams.get("professionalId");
         const includeCancelledRaw = (searchParams.get("includeCancelled") || "").toLowerCase();
@@ -50,28 +66,37 @@ export async function GET(req: NextRequest) {
             include: {
                 patient: { include: { user: true } },
                 professional: { include: { user: true } },
-                service: true,
-                room: true
+                professionalService: true, // <-- CAMBIO: Usamos la nueva relación
+                room: true,
+                payments: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1
+                }
             }
         });
 
         return NextResponse.json({
             date: dateStr,
             count: appts.length,
-            appointments: appts.map(a => ({
-                id: a.id,
-                estado: a.estado,
-                startAt: a.fecha,
-                endAt: a.horaFin,
-                serviceId: a.serviceId,
-                serviceName: a.service.nombre,
-                roomId: a.roomId ?? null,
-                roomName: a.room?.nombre ?? null,
-                patientId: a.patientId,
-                professionalId: a.professionalId,
-                patientName: [a.patient?.nombre, a.patient?.apellido].filter(Boolean).join(" ").trim() || a.patient?.user?.email || "",
-                professionalName: [a.professional?.nombre, a.professional?.apellido].filter(Boolean).join(" ").trim() || a.professional?.user?.email || ""
-            }))
+            appointments: appts.map((a: ApptWithRelations) => {
+                const payment = a.payments[0];
+                return {
+                    id: a.id,
+                    estado: a.estado,
+                    startAt: a.fecha,
+                    endAt: a.horaFin,
+                    serviceId: a.professionalServiceId, // <-- CAMBIO
+                    serviceName: a.professionalService.nombre, // <-- CAMBIO
+                    roomId: a.roomId ?? null,
+                    roomName: a.room?.nombre ?? null,
+                    patientId: a.patientId,
+                    professionalId: a.professionalId,
+                    patientName: [a.patient?.nombre, a.patient?.apellido].filter(Boolean).join(" ").trim() || a.patient?.user?.email || "",
+                    professionalName: [a.professional?.nombre, a.professional?.apellido].filter(Boolean).join(" ").trim() || a.professional?.user?.email || "",
+                    paymentId: payment?.id ?? null,
+                    paymentStatus: payment?.status ?? null,
+                };
+            })
         });
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
