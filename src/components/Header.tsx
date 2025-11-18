@@ -55,6 +55,9 @@ export default function Header() {
         // Rutas de Paciente
         { href: "/paciente", label: "Mis Turnos", roles: ["PACIENTE"] },
         { href: "/paciente/solicitar", label: "Solicitar Turno", roles: ["PACIENTE"] },
+
+        // Configuración común
+        { href: "/cuenta/seguridad", label: "Seguridad", roles: ["ADMIN", "RECEPCION", "PROFESIONAL", "PACIENTE"] },
     ];
     // --- FIN: NAVEGACIÓN ACTUALIZADA ---
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 // --- Tipos de Datos ---
 type Availability = {
@@ -9,6 +9,7 @@ type Availability = {
     startTime: string;
     endTime: string;
     roomName: string;
+    roomId: string | null;
 };
 type Service = {
     id: string; // Cambiado de serviceId a id para consistencia
@@ -16,6 +17,7 @@ type Service = {
     duracionMin: number;
     precioBase: number;
 };
+type Room = { id: string; nombre: string };
 const DIAS_SEMANA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 // --- Helpers ---
@@ -32,11 +34,14 @@ export default function ProfesionalPerfilPage() {
     const [aliasBancario, setAliasBancario] = useState("");
     const [availability, setAvailability] = useState<Availability[]>([]);
     const [services, setServices] = useState<Service[]>([]);
+    const [rooms, setRooms] = useState<Room[]>([]);
+    const [newPatient, setNewPatient] = useState({ nombre: "", apellido: "", email: "", telefono: "", password: "" });
+    const [creatingPatient, setCreatingPatient] = useState(false);
 
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
 
-    const [newAvail, setNewAvail] = useState({ dayOfWeek: 1, startTime: "09:00", endTime: "13:00" });
+    const [newAvail, setNewAvail] = useState({ dayOfWeek: 1, startTime: "09:00", endTime: "13:00", roomId: "" });
     const [newService, setNewService] = useState({ nombre: "", duracionMin: 30, precioBase: 10000 });
 
     const loadData = async () => {
@@ -51,6 +56,11 @@ export default function ProfesionalPerfilPage() {
             setAliasBancario(data.profile.aliasBancario ?? "");
             setAvailability(data.availability ?? []);
             setServices(data.services ?? []); // Servicios propios
+            setRooms(data.rooms ?? []);
+            setNewAvail(prev => ({
+                ...prev,
+                roomId: prev.roomId || data.rooms?.[0]?.id || ""
+            }));
 
         } catch (e: any) {
             setMsg(e.message);
@@ -77,9 +87,14 @@ export default function ProfesionalPerfilPage() {
     };
 
     const handleAddAvailability = () => {
+        const room = rooms.find(r => r.id === newAvail.roomId);
+        if (!room) {
+            setMsg("Debes seleccionar un consultorio.");
+            return;
+        }
         setAvailability([
             ...availability,
-            { ...newAvail, id: `temp-${Date.now()}`, roomName: "Nuevo" }
+            { ...newAvail, id: `temp-${Date.now()}`, roomName: room.nombre }
         ]);
     };
 
@@ -97,6 +112,7 @@ export default function ProfesionalPerfilPage() {
                     dayOfWeek: a.dayOfWeek,
                     startTime: a.startTime,
                     endTime: a.endTime,
+                    roomId: a.roomId ?? undefined,
                 }))
             }),
         });
@@ -104,6 +120,28 @@ export default function ProfesionalPerfilPage() {
         if (!ok) setMsg(error ?? "Error al guardar horarios");
         else setMsg("Horarios actualizados.");
         await loadData();
+    };
+
+    const handleCreatePatient = async (e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setMsg("");
+        if (!newPatient.nombre || !newPatient.apellido || !newPatient.email || !newPatient.password) {
+            setMsg("Completá los datos básicos del paciente.");
+            return;
+        }
+        setCreatingPatient(true);
+        const r = await fetch("/api/pacientes/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newPatient),
+        });
+        const { ok, error } = await safeJson(r);
+        if (!ok) setMsg(error ?? "No se pudo crear el paciente");
+        else {
+            setMsg("Paciente creado. Recordá compartirle la contraseña. Solo podrá cambiarla luego de 7 días.");
+            setNewPatient({ nombre: "", apellido: "", email: "", telefono: "", password: "" });
+        }
+        setCreatingPatient(false);
     };
 
     const handleAddService = async (e: React.FormEvent) => {
@@ -158,6 +196,23 @@ export default function ProfesionalPerfilPage() {
                 </div>
             </section>
 
+            <section className="card">
+                <h2 className="h2">Registrar paciente</h2>
+                <p className="text-sm text-muted mt-1">Podés crearle una cuenta a tus pacientes y compartirles la contraseña provisoria (solo podrán cambiarla pasados 7 días).</p>
+                <form onSubmit={handleCreatePatient} className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <input className="input" placeholder="Nombre" value={newPatient.nombre} onChange={e => setNewPatient(p => ({ ...p, nombre: e.target.value }))} />
+                    <input className="input" placeholder="Apellido" value={newPatient.apellido} onChange={e => setNewPatient(p => ({ ...p, apellido: e.target.value }))} />
+                    <input className="input" type="email" placeholder="Email" value={newPatient.email} onChange={e => setNewPatient(p => ({ ...p, email: e.target.value }))} />
+                    <input className="input" placeholder="Teléfono" value={newPatient.telefono} onChange={e => setNewPatient(p => ({ ...p, telefono: e.target.value }))} />
+                    <input className="input" type="password" placeholder="Contraseña provisoria" value={newPatient.password} onChange={e => setNewPatient(p => ({ ...p, password: e.target.value }))} minLength={6} />
+                    <div className="md:col-span-5 flex justify-end">
+                        <button type="submit" className="btn btn-outline" disabled={creatingPatient}>
+                            {creatingPatient ? "Creando..." : "Crear paciente"}
+                        </button>
+                    </div>
+                </form>
+            </section>
+
             {/* 2. HORARIOS */}
             <section className="card">
                 <h2 className="h2">Horarios de Atención</h2>
@@ -166,16 +221,17 @@ export default function ProfesionalPerfilPage() {
                         <p className="text-sm text-muted">No tienes horarios cargados.</p>
                     ) : (
                         availability.map((a) => (
-                            <div key={a.id} className="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
-                                <span className="font-medium">{DIAS_SEMANA[a.dayOfWeek]}</span>
-                                <span>{a.startTime} a {a.endTime}</span>
+                            <div key={a.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 p-2 bg-gray-50 rounded-lg">
+                                <div className="font-medium">{DIAS_SEMANA[a.dayOfWeek]}</div>
+                                <div className="text-sm text-muted">{a.roomName}</div>
+                                <div>{a.startTime} a {a.endTime}</div>
                                 <button onClick={() => handleRemoveAvailability(a.id)} className="text-red-600 text-sm">Quitar</button>
                             </div>
                         ))
                     )}
                 </div>
 
-                <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
                     <div>
                         <label className="block text-sm font-medium">Día</label>
                         <select
@@ -190,6 +246,19 @@ export default function ProfesionalPerfilPage() {
                             <option value={5}>Viernes</option>
                             <option value={6}>Sábado</option>
                             <option value={0}>Domingo</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium">Consultorio</label>
+                        <select
+                            className="input mt-1"
+                            value={newAvail.roomId}
+                            onChange={e => setNewAvail(p => ({ ...p, roomId: e.target.value }))}
+                        >
+                            {rooms.length === 0 ? <option value="">Sin consultorios</option> : null}
+                            {rooms.map(r => (
+                                <option key={r.id} value={r.id}>{r.nombre}</option>
+                            ))}
                         </select>
                     </div>
                     <div>

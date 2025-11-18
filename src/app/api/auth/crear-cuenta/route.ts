@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
                     email: email.toLowerCase(),
                     password: hashedPassword,
                     role: role,
+                    passwordChangedAt: new Date(),
                 },
             });
 

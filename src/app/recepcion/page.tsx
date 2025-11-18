@@ -47,6 +47,8 @@ export default function RecepcionPage() {
     const [loadingSlots, setLoadingSlots] = useState(false);
     const [loadingList, setLoadingList] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [creatingPatient, setCreatingPatient] = useState(false);
+    const [newPatient, setNewPatient] = useState({ nombre: "", apellido: "", email: "", telefono: "", password: "" });
 
     const [msg, setMsg] = useState<string>("");
     const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -56,16 +58,22 @@ export default function RecepcionPage() {
     const [editSelected, setEditSelected] = useState<Record<string, string>>({});
 
     // 1. Cargar Profesionales y Pacientes (Datos base)
+    const loadDump = async (opts?: { preferPatientEmail?: string }) => {
+        const r = await fetch("/api/debug/dump");
+        const { ok, data, error } = await safeJson<DumpData & { error?: string }>(r);
+        if (!ok) { setMsg(error ?? "Error cargando datos iniciales"); return; }
+        const j = data as DumpData;
+        setDump(j);
+        setProfessionalEmail(prev => prev || j.professionals?.[0]?.userEmail || "");
+        if (opts?.preferPatientEmail) {
+            setPatientEmail(opts.preferPatientEmail);
+        } else {
+            setPatientEmail(prev => prev || j.patients?.[0]?.userEmail || "");
+        }
+    };
+
     useEffect(() => {
-        (async () => {
-            const r = await fetch("/api/debug/dump");
-            const { ok, data, error } = await safeJson<DumpData & { error?: string }>(r);
-            if (!ok) { setMsg(error ?? "Error cargando datos iniciales"); return; }
-            const j = data as DumpData;
-            setDump(j);
-            if (j.professionals?.[0]) setProfessionalEmail(j.professionals[0].userEmail);
-            if (j.patients?.[0]) setPatientEmail(j.patients[0].userEmail);
-        })().catch(() => { });
+        loadDump().catch(() => { });
     }, []);
 
     // 2. Cargar Servicios cuando cambia el profesional
@@ -113,6 +121,37 @@ export default function RecepcionPage() {
     useEffect(() => { setSelectedSlot(""); loadSlots().catch(() => { }); /* eslint-disable-next-line */ }, [date, professionalEmail, serviceName]);
 
     // --- ACCIONES ---
+
+    const handleCreatePatient = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setMsg("");
+        const payload = {
+            nombre: newPatient.nombre.trim(),
+            apellido: newPatient.apellido.trim(),
+            email: newPatient.email.trim(),
+            telefono: newPatient.telefono.trim(),
+            password: newPatient.password,
+        };
+        if (!payload.nombre || !payload.apellido || !payload.email || !payload.password) {
+            setMsg("Completá los datos básicos del paciente.");
+            return;
+        }
+        setCreatingPatient(true);
+        const r = await fetch("/api/pacientes/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const { ok, data, error } = await safeJson<any>(r);
+        if (!ok) {
+            setMsg(error ?? "No se pudo crear el paciente");
+        } else {
+            setMsg(`Paciente ${data?.patient?.apellido ?? ""} ${data?.patient?.nombre ?? ""} creado. Compartile la contraseña informada.`);
+            setNewPatient({ nombre: "", apellido: "", email: "", telefono: "", password: "" });
+            await loadDump({ preferPatientEmail: payload.email.toLowerCase() });
+        }
+        setCreatingPatient(false);
+    };
 
     const createAppointment = async () => {
         setMsg("");
@@ -228,6 +267,24 @@ export default function RecepcionPage() {
                         </select>
                     </div>
                 </div>
+            </section>
+
+            {/* Formulario Crear Turno */}
+            <section className="card">
+                <h2 className="h2">Nuevo paciente</h2>
+                <p className="text-sm text-muted mt-1">Creá perfiles y compartí la contraseña inicial. Cada paciente solo podrá modificarla luego de 7 días.</p>
+                <form onSubmit={handleCreatePatient} className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <input className="input" placeholder="Nombre" value={newPatient.nombre} onChange={(e) => setNewPatient(p => ({ ...p, nombre: e.target.value }))} />
+                    <input className="input" placeholder="Apellido" value={newPatient.apellido} onChange={(e) => setNewPatient(p => ({ ...p, apellido: e.target.value }))} />
+                    <input className="input" type="email" placeholder="Email" value={newPatient.email} onChange={(e) => setNewPatient(p => ({ ...p, email: e.target.value }))} />
+                    <input className="input" placeholder="Teléfono" value={newPatient.telefono} onChange={(e) => setNewPatient(p => ({ ...p, telefono: e.target.value }))} />
+                    <input className="input" type="password" placeholder="Contraseña provisoria" value={newPatient.password} onChange={(e) => setNewPatient(p => ({ ...p, password: e.target.value }))} minLength={6} />
+                    <div className="md:col-span-5 flex justify-end">
+                        <button type="submit" className="btn btn-outline" disabled={creatingPatient}>
+                            {creatingPatient ? "Creando..." : "Crear paciente"}
+                        </button>
+                    </div>
+                </form>
             </section>
 
             {/* Formulario Crear Turno */}

@@ -13,14 +13,14 @@ async function main() {
     // Rooms
     const [roomA, roomB] = await prisma.$transaction([
         prisma.room.upsert({
-            where: { nombre: "Consultorio A" },
+            where: { nombre: "Calma" },
             update: {},
-            create: { nombre: "Consultorio A" }
+            create: { nombre: "Calma" }
         }),
         prisma.room.upsert({
-            where: { nombre: "Consultorio B" },
+            where: { nombre: "Armonía" },
             update: {},
-            create: { nombre: "Consultorio B" }
+            create: { nombre: "Armonía" }
         })
     ]);
 
@@ -33,37 +33,39 @@ async function main() {
     // Creamos el usuario ADMIN
     await prisma.user.upsert({
         where: { email: "admin@zenit.local" },
-        update: { password: passAdmin },
+        update: { password: passAdmin, passwordChangedAt: new Date() },
         create: {
             email: "admin@zenit.local",
             password: passAdmin,
-            role: "ADMIN"
+            role: "ADMIN",
+            passwordChangedAt: new Date()
         }
     });
 
     // Creamos el usuario RECEPCION
     await prisma.user.upsert({
         where: { email: "recepcion@zenit.local" },
-        update: { password: passRecep },
+        update: { password: passRecep, passwordChangedAt: new Date() },
         create: {
             email: "recepcion@zenit.local",
             password: passRecep,
-            role: "RECEPCION"
+            role: "RECEPCION",
+            passwordChangedAt: new Date()
         }
     });
 
     // Usuario Profesional
     const proUser = await prisma.user.upsert({
         where: { email: "pro@zenit.local" },
-        update: { password: passPro },
-        create: { email: "pro@zenit.local", password: passPro, role: "PROFESIONAL" }
+        update: { password: passPro, passwordChangedAt: new Date() },
+        create: { email: "pro@zenit.local", password: passPro, role: "PROFESIONAL", passwordChangedAt: new Date() }
     });
 
     // Usuario Paciente
     const pacUser = await prisma.user.upsert({
         where: { email: "paciente@zenit.local" },
-        update: { password: passPac },
-        create: { email: "paciente@zenit.local", password: passPac, role: "PACIENTE" }
+        update: { password: passPac, passwordChangedAt: new Date() },
+        create: { email: "paciente@zenit.local", password: passPac, role: "PACIENTE", passwordChangedAt: new Date() }
     });
 
     // Perfil Profesional
