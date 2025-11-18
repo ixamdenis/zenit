@@ -76,13 +76,19 @@ export async function GET(req: NextRequest) {
         });
 
         const slots: string[] = [];
+        const now = new Date();
+        const sameDayAsToday = base.getFullYear() === now.getFullYear()
+            && base.getMonth() === now.getMonth()
+            && base.getDate() === now.getDate();
+
         for (const a of availability) {
             let cursor = toDateAt(a.startTime, base);
             const end = toDateAt(a.endTime, base);
             while (addMinutes(cursor, dur) <= end) {
                 const endSlot = addMinutes(cursor, dur);
                 const overlap = booked.some(b => !(endSlot <= b.fecha || cursor >= b.horaFin));
-                if (!overlap) slots.push(cursor.toISOString());
+                const isPast = sameDayAsToday && endSlot <= now;
+                if (!overlap && !isPast) slots.push(cursor.toISOString());
                 cursor = endSlot;
             }
         }

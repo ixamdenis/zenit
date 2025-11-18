@@ -10,6 +10,13 @@ function addMinutes(date: Date, minutes: number) {
     return new Date(date.getTime() + minutes * 60000);
 }
 
+function toDateAt(time: string, base: Date) {
+    const [hh = "0", mm = "0"] = time.split(":");
+    const d = new Date(base);
+    d.setHours(Number(hh), Number(mm), 0, 0);
+    return d;
+}
+
 type CreateBody = {
     patientEmail?: string;
     professionalEmail: string;
@@ -64,6 +71,24 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "startAtISO inválido" }, { status: 400 });
         }
         const endAt = addMinutes(startAt, service.duracionMin);
+        const dayOfWeek = startAt.getDay();
+
+        const availabilities = await prisma.availability.findMany({
+            where: { professionalId: professional.id, dayOfWeek }
+        });
+
+        const matchingAvailability = availabilities.find(a => {
+            const slotStart = toDateAt(a.startTime, startAt);
+            const slotEnd = toDateAt(a.endTime, startAt);
+            return startAt >= slotStart && endAt <= slotEnd;
+        });
+
+        if (!matchingAvailability) {
+            return NextResponse.json({ error: "El profesional no atiende en ese horario" }, { status: 400 });
+        }
+        if (!matchingAvailability.roomId) {
+            return NextResponse.json({ error: "No hay un consultorio asignado para ese horario" }, { status: 400 });
+        }
 
         const overlap = await prisma.appointment.findFirst({
             where: {
@@ -84,7 +109,8 @@ export async function POST(req: NextRequest) {
                     professionalServiceId: service.id, // <-- CAMBIO: Usamos professionalServiceId
                     fecha: startAt,
                     horaFin: endAt,
-                    estado: AppointmentStatus.RESERVADO
+                    estado: AppointmentStatus.RESERVADO,
+                    roomId: matchingAvailability.roomId
                 },
                 include: { professionalService: true } // <-- CAMBIO: include
             });
