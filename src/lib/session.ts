@@ -13,6 +13,7 @@ export type SessionPayload = {
     email: string;
     role: Role;
     nombre: string;
+    mustChangePassword?: boolean;
 };
 
 export async function encrypt(payload: SessionPayload) {

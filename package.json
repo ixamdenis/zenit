@@ -10,18 +10,24 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@fullcalendar/core": "^6.1.19",
+    "@fullcalendar/daygrid": "^6.1.19",
+    "@fullcalendar/interaction": "^6.1.19",
+    "@fullcalendar/react": "^6.1.19",
+    "@fullcalendar/timegrid": "^6.1.19",
     "@prisma/client": "^6.18.0",
+    "bcryptjs": "^2.4.3",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
+    "jose": "^5.6.3",
     "next": "16.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "zod": "^4.1.12",
-    "bcryptjs": "^2.4.3",
-    "jose": "^5.6.3"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -32,7 +38,6 @@
     "tailwindcss": "^4.0.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.0",
-    "typescript": "^5.0.0",
-    "@types/bcryptjs": "^2.4.6"
+    "typescript": "^5.0.0"
   }
 }
