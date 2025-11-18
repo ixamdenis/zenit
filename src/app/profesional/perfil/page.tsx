@@ -9,6 +9,7 @@ type Availability = {
     startTime: string;
     endTime: string;
     roomName: string;
+    roomId: string | null;
 };
 type Service = {
     id: string; // Cambiado de serviceId a id para consistencia
@@ -16,6 +17,7 @@ type Service = {
     duracionMin: number;
     precioBase: number;
 };
+type Room = { id: string; nombre: string };
 const DIAS_SEMANA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 // --- Helpers ---
@@ -32,11 +34,12 @@ export default function ProfesionalPerfilPage() {
     const [aliasBancario, setAliasBancario] = useState("");
     const [availability, setAvailability] = useState<Availability[]>([]);
     const [services, setServices] = useState<Service[]>([]);
+    const [rooms, setRooms] = useState<Room[]>([]);
 
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
 
-    const [newAvail, setNewAvail] = useState({ dayOfWeek: 1, startTime: "09:00", endTime: "13:00" });
+    const [newAvail, setNewAvail] = useState({ dayOfWeek: 1, startTime: "09:00", endTime: "13:00", roomId: "" });
     const [newService, setNewService] = useState({ nombre: "", duracionMin: 30, precioBase: 10000 });
 
     const loadData = async () => {
@@ -51,6 +54,11 @@ export default function ProfesionalPerfilPage() {
             setAliasBancario(data.profile.aliasBancario ?? "");
             setAvailability(data.availability ?? []);
             setServices(data.services ?? []); // Servicios propios
+            setRooms(data.rooms ?? []);
+            setNewAvail(prev => ({
+                ...prev,
+                roomId: prev.roomId || data.rooms?.[0]?.id || ""
+            }));
 
         } catch (e: any) {
             setMsg(e.message);
@@ -77,9 +85,14 @@ export default function ProfesionalPerfilPage() {
     };
 
     const handleAddAvailability = () => {
+        const room = rooms.find(r => r.id === newAvail.roomId);
+        if (!room) {
+            setMsg("Debes seleccionar un consultorio.");
+            return;
+        }
         setAvailability([
             ...availability,
-            { ...newAvail, id: `temp-${Date.now()}`, roomName: "Nuevo" }
+            { ...newAvail, id: `temp-${Date.now()}`, roomName: room.nombre }
         ]);
     };
 
@@ -97,6 +110,7 @@ export default function ProfesionalPerfilPage() {
                     dayOfWeek: a.dayOfWeek,
                     startTime: a.startTime,
                     endTime: a.endTime,
+                    roomId: a.roomId ?? undefined,
                 }))
             }),
         });
@@ -166,16 +180,17 @@ export default function ProfesionalPerfilPage() {
                         <p className="text-sm text-muted">No tienes horarios cargados.</p>
                     ) : (
                         availability.map((a) => (
-                            <div key={a.id} className="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
-                                <span className="font-medium">{DIAS_SEMANA[a.dayOfWeek]}</span>
-                                <span>{a.startTime} a {a.endTime}</span>
+                            <div key={a.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 p-2 bg-gray-50 rounded-lg">
+                                <div className="font-medium">{DIAS_SEMANA[a.dayOfWeek]}</div>
+                                <div className="text-sm text-muted">{a.roomName}</div>
+                                <div>{a.startTime} a {a.endTime}</div>
                                 <button onClick={() => handleRemoveAvailability(a.id)} className="text-red-600 text-sm">Quitar</button>
                             </div>
                         ))
                     )}
                 </div>
 
-                <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                <div className="mt-4 pt-4 border-t grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
                     <div>
                         <label className="block text-sm font-medium">Día</label>
                         <select
@@ -190,6 +205,19 @@ export default function ProfesionalPerfilPage() {
                             <option value={5}>Viernes</option>
                             <option value={6}>Sábado</option>
                             <option value={0}>Domingo</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium">Consultorio</label>
+                        <select
+                            className="input mt-1"
+                            value={newAvail.roomId}
+                            onChange={e => setNewAvail(p => ({ ...p, roomId: e.target.value }))}
+                        >
+                            {rooms.length === 0 ? <option value="">Sin consultorios</option> : null}
+                            {rooms.map(r => (
+                                <option key={r.id} value={r.id}>{r.nombre}</option>
+                            ))}
                         </select>
                     </div>
                     <div>

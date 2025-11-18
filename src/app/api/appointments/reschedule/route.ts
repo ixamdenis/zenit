@@ -12,8 +12,15 @@ function addMinutes(date: Date, minutes: number) {
     return new Date(date.getTime() + minutes * 60000);
 }
 
+function toDateAt(time: string, base: Date) {
+    const [hh = "0", mm = "0"] = time.split(":");
+    const d = new Date(base);
+    d.setHours(Number(hh), Number(mm), 0, 0);
+    return d;
+}
+
 type Body = { appointmentId: string; newStartISO: string; };
-type AvailabilityItem = { startTime: string; endTime: string; };
+type AvailabilityItem = { startTime: string; endTime: string; roomId: string | null; };
 
 export async function POST(req: NextRequest) {
     try {
@@ -56,17 +63,16 @@ export async function POST(req: NextRequest) {
             where: { professionalId: appt.professionalId, dayOfWeek }
         });
 
-        const withinAvailability = avail.some((a: AvailabilityItem) => {
-            const [sh, sm] = a.startTime.split(":").map(Number);
-            const [eh, em] = a.endTime.split(":").map(Number);
-            const base = new Date(startAt);
-            base.setHours(0, 0, 0, 0);
-            const aStart = new Date(base); aStart.setHours(sh, sm, 0, 0);
-            const aEnd = new Date(base); aEnd.setHours(eh, em, 0, 0);
+        const matchingAvailability = avail.find((a: AvailabilityItem) => {
+            const aStart = toDateAt(a.startTime, startAt);
+            const aEnd = toDateAt(a.endTime, startAt);
             return startAt >= aStart && endAt <= aEnd;
         });
-        if (!withinAvailability) {
+        if (!matchingAvailability) {
             return NextResponse.json({ error: "El profesional no atiende en ese horario" }, { status: 400 });
+        }
+        if (!matchingAvailability.roomId) {
+            return NextResponse.json({ error: "Ese horario no tiene consultorio asignado" }, { status: 400 });
         }
 
         // Verificar solapamiento
@@ -92,7 +98,7 @@ export async function POST(req: NextRequest) {
         const [updated, payment] = await prisma.$transaction([
             prisma.appointment.update({
                 where: { id: appt.id },
-                data: { fecha: startAt, horaFin: endAt }
+                data: { fecha: startAt, horaFin: endAt, roomId: matchingAvailability.roomId }
             }),
             (prisma as any)["payment"].create({
                 data: {

@@ -13,14 +13,14 @@ async function main() {
     // Rooms
     const [roomA, roomB] = await prisma.$transaction([
         prisma.room.upsert({
-            where: { nombre: "Consultorio A" },
+            where: { nombre: "Calma" },
             update: {},
-            create: { nombre: "Consultorio A" }
+            create: { nombre: "Calma" }
         }),
         prisma.room.upsert({
-            where: { nombre: "Consultorio B" },
+            where: { nombre: "Armonía" },
             update: {},
-            create: { nombre: "Consultorio B" }
+            create: { nombre: "Armonía" }
         })
     ]);
 
