@@ -94,7 +94,7 @@ export default function ProfesionalPerfilPage() {
         }
         setAvailability([
             ...availability,
-            { ...newAvail, id: `temp-${Date.now()}`, roomName: room.nombre }
+            { ...newAvail, id: `temp-${Date.now()}`, roomName: room.nombre, roomId: room.id }
         ]);
     };
 
@@ -144,7 +144,7 @@ export default function ProfesionalPerfilPage() {
         setCreatingPatient(false);
     };
 
-    const handleAddService = async (e: React.FormEvent) => {
+    const handleAddService = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setMsg("");
         const r = await fetch("/api/services", {
