@@ -6,16 +6,13 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// En Next.js 15+, 'params' es una Promise
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        // --- CORRECCIÓN: Esperar la promesa de params ---
         const { id } = await params;
         const professionalId = id;
-        // ------------------------------------------------
 
         if (!professionalId || typeof professionalId !== 'string' || professionalId.length === 0) {
             return NextResponse.json({ error: "ID de profesional requerido" }, { status: 400 });
@@ -29,6 +26,7 @@ export async function GET(
                 especialidad: true,
                 matriculaProvincial: true,
                 matriculaNacional: true,
+                aliasBancario: true, // <--- AGREGADO: Importante para mostrarlo en el frontend
                 user: { select: { email: true } },
                 availabilities: {
                     select: {
@@ -59,8 +57,8 @@ export async function GET(
             especialidad: professional.especialidad,
             matriculaProvincial: professional.matriculaProvincial,
             matriculaNacional: professional.matriculaNacional,
+            aliasBancario: professional.aliasBancario, // <--- AGREGADO
             email: professional.user.email,
-            // Agrupamos la disponibilidad por día de la semana para el frontend
             availabilities: professional.availabilities.reduce((acc: Record<number, string[]>, a) => {
                 if (!acc[a.dayOfWeek]) acc[a.dayOfWeek] = [];
                 acc[a.dayOfWeek].push(`${a.startTime} a ${a.endTime}`);

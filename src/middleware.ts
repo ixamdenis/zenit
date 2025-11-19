@@ -3,11 +3,10 @@ import { getSession } from "@/lib/session";
 
 // 1. Define las rutas que queremos proteger
 const protectedRoutes: Record<string, string[]> = {
-    // --- RUTAS CON EXCEPCIONES ESPECÍFICAS DEBEN IR PRIMERO ---
-    // Excepción: Permitir a profesionales ver perfiles de pacientes (ruta completa)
+    // Excepción: Permitir a profesionales ver perfiles de pacientes
     "/recepcion/perfil-paciente": ["ADMIN", "RECEPCION", "PROFESIONAL"],
 
-    // Rutas de Recepción (General)
+    // Rutas de Recepción
     "/recepcion": ["ADMIN", "RECEPCION"],
     "/pagos": ["ADMIN", "RECEPCION"],
 
@@ -16,9 +15,12 @@ const protectedRoutes: Record<string, string[]> = {
 
     // Ruta Paciente
     "/paciente": ["PACIENTE", "ADMIN"],
+
+    // --- NUEVA RUTA PROTEGIDA ADMIN ---
+    "/admin": ["ADMIN"],
 };
 
-// 2. Define las rutas públicas (donde NO se necesita sesión)
+// 2. Rutas públicas
 const publicRoutes = [
     "/login",
     "/register",
@@ -27,6 +29,7 @@ const publicRoutes = [
     "/api/auth/me",
     "/api/auth/logout",
     "/api/auth/cambiar-password",
+    "/api/admin/init", // <--- IMPORTANTE: Pública para que puedas crear tu usuario inicial
 ];
 
 export async function middleware(req: NextRequest) {
@@ -64,16 +67,13 @@ export async function middleware(req: NextRequest) {
     if (!session.mustChangePassword && path === "/cambiar-password") {
         return NextResponse.redirect(new URL("/", req.url));
     }
-    // -----------------------------------------------
 
     if (protectedRouteRule) {
         const allowedRoles = protectedRoutes[protectedRouteRule];
 
         if (allowedRoles.includes(session.role)) {
-            // ¡Permiso concedido!
             return NextResponse.next();
         } else {
-            // No tiene el rol correcto.
             console.warn(`[Middleware] Usuario ${session.email} (Rol: ${session.role}) sin permiso para ${path}.`);
             return NextResponse.redirect(new URL("/", req.url));
         }

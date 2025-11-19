@@ -1,4 +1,3 @@
-// src/components/Header.tsx
 "use client";
 
 import Image from "next/image";
@@ -38,37 +37,32 @@ export default function Header() {
     const handleLogout = async () => {
         if (!window.confirm("¿Seguro que quieres cerrar sesión?")) return;
         await fetch("/api/auth/logout", { method: "POST" });
-        window.location.href = "/login"; // Redirige al login
+        window.location.href = "/login";
     };
 
-    // --- INICIO: NAVEGACIÓN ACTUALIZADA ---
     const nav = [
-        // Rutas de Recepción
+        // --- LINK ADMIN NUEVO ---
+        { href: "/admin", label: "Super Admin", roles: ["ADMIN"] },
+
         { href: "/recepcion", label: "Recepción", roles: ["ADMIN", "RECEPCION"] },
         { href: "/pagos", label: "Pagos", roles: ["ADMIN", "RECEPCION"] },
-
-        // Rutas de Profesional
         { href: "/profesional", label: "Estadísticas", roles: ["PROFESIONAL"] },
         { href: "/profesional/agenda", label: "Mi Agenda", roles: ["PROFESIONAL"] },
-        { href: "/profesional/mis-pacientes", label: "Mis Pacientes", roles: ["PROFESIONAL"] }, // <-- NUEVA RUTA
+        { href: "/profesional/mis-pacientes", label: "Mis Pacientes", roles: ["PROFESIONAL"] },
         { href: "/profesional/perfil", label: "Mi Perfil", roles: ["PROFESIONAL"] },
-
-        // Rutas de Paciente
         { href: "/paciente", label: "Mis Turnos", roles: ["PACIENTE"] },
         { href: "/paciente/solicitar", label: "Solicitar Turno", roles: ["PACIENTE"] },
     ];
-    // --- FIN: NAVEGACIÓN ACTUALIZADA ---
 
-    // Filtramos la navegación según el rol del usuario
     const allowedNav = nav.filter(item =>
         session?.role && item.roles.includes(session.role as any)
     );
 
-    // Lógica de "active" mejorada
     const getIsActive = (href: string) => {
         if (href === "/") return pathname === "/";
-        if (href === "/profesional") return pathname === "/profesional"; // Coincidencia exacta
-        if (href === "/paciente") return pathname === "/paciente"; // Coincidencia exacta
+        if (href === "/admin") return pathname.startsWith("/admin"); // Active para admin
+        if (href === "/profesional") return pathname === "/profesional";
+        if (href === "/paciente") return pathname === "/paciente";
         return pathname.startsWith(href);
     };
 
@@ -90,7 +84,6 @@ export default function Header() {
                     <div className="text-[18px] sm:text-[20px] font-semibold">Sistema de turnos</div>
                 </div>
 
-                {/* Navegación y Menú de Usuario */}
                 <div className="ml-auto flex items-center gap-2 sm:gap-4">
                     <nav className="flex items-center gap-1">
                         {!loading && session && allowedNav.map((item) => {
@@ -109,7 +102,6 @@ export default function Header() {
                         })}
                     </nav>
 
-                    {/* Menú de Usuario (Ahora funcionará) */}
                     {!loading && (
                         <div className="flex items-center gap-2">
                             {session ? (

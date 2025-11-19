@@ -2,49 +2,50 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import {
-    PrismaClient,
-    Appointment,
-    PatientProfile,
-    ProfessionalProfile,
-    ProfessionalService, // <-- CAMBIO
-    Room,
-    Payment,
-    User
-} from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-function ymdToUtcRange(ymd: string) {
-    const [y, m, d] = ymd.split("-").map(Number);
-    const start = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0));
-    const end = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59, 999));
-    return { start, end };
-}
-
-type ApptWithRelations = Appointment & {
-    patient: (PatientProfile & { user: User | null }) | null;
-    professional: (ProfessionalProfile & { user: User | null }) | null;
-    professionalService: ProfessionalService; // <-- CAMBIO
-    room: Room | null;
-    payments: Payment[];
-};
+// (Mantener las funciones auxiliares e imports existentes)...
 
 export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
-        const dateStr = searchParams.get("date");
+
+        // --- NUEVA LÓGICA DE RANGOS ---
+        const from = searchParams.get("from"); // ISO string start
+        const to = searchParams.get("to");     // ISO string end
+        const dateStr = searchParams.get("date"); // Fallback legacy
+
         const professionalEmail = searchParams.get("professionalEmail");
         const professionalId = searchParams.get("professionalId");
         const includeCancelledRaw = (searchParams.get("includeCancelled") || "").toLowerCase();
         const includeCancelled = ["1", "true", "yes", "si", "sí"].includes(includeCancelledRaw);
 
-        if (!dateStr) {
-            return NextResponse.json({ error: "Parámetro requerido: date" }, { status: 400 });
+        // Construir el filtro de fecha
+        let dateFilter: any = {};
+
+        if (from && to) {
+            // Si el calendario pide un rango específico
+            dateFilter = {
+                gte: new Date(from),
+                lte: new Date(to)
+            };
+        } else if (dateStr) {
+            // Lógica anterior para un solo día (fallback)
+            const [y, m, d] = dateStr.split("-").map(Number);
+            const start = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0));
+            const end = new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59, 999));
+            dateFilter = { gte: start, lte: end };
+        } else {
+            // Default: Hoy
+            const now = new Date();
+            const start = new Date(now.setHours(0, 0, 0, 0));
+            const end = new Date(now.setHours(23, 59, 59, 999));
+            dateFilter = { gte: start, lte: end };
         }
 
-        const { start, end } = ymdToUtcRange(dateStr);
-
+        // Resolver ID profesional (Misma lógica anterior)
         let profId: string | undefined = undefined;
         if (professionalId) {
             profId = professionalId;
@@ -56,7 +57,8 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        const where: any = { fecha: { gte: start, lte: end } };
+        // Query Principal
+        const where: any = { fecha: dateFilter };
         if (profId) where.professionalId = profId;
         if (!includeCancelled) where.estado = { not: "CANCELADO" };
 
@@ -66,7 +68,7 @@ export async function GET(req: NextRequest) {
             include: {
                 patient: { include: { user: true } },
                 professional: { include: { user: true } },
-                professionalService: true, // <-- CAMBIO: Usamos la nueva relación
+                professionalService: true,
                 room: true,
                 payments: {
                     orderBy: { createdAt: 'desc' },
@@ -75,29 +77,33 @@ export async function GET(req: NextRequest) {
             }
         });
 
+        // Mapping de respuesta (Igual que antes)
+        // ... (El resto del código del mapeo se mantiene igual)
+
         return NextResponse.json({
-            date: dateStr,
+            range: { from, to },
             count: appts.length,
-            appointments: appts.map((a: ApptWithRelations) => {
+            appointments: appts.map((a: any) => { // Usa tu tipo ApptWithRelations aquí
                 const payment = a.payments[0];
                 return {
                     id: a.id,
                     estado: a.estado,
                     startAt: a.fecha,
                     endAt: a.horaFin,
-                    serviceId: a.professionalServiceId, // <-- CAMBIO
-                    serviceName: a.professionalService.nombre, // <-- CAMBIO
+                    serviceId: a.professionalServiceId,
+                    serviceName: a.professionalService.nombre,
                     roomId: a.roomId ?? null,
                     roomName: a.room?.nombre ?? null,
                     patientId: a.patientId,
                     professionalId: a.professionalId,
-                    patientName: [a.patient?.nombre, a.patient?.apellido].filter(Boolean).join(" ").trim() || a.patient?.user?.email || "",
-                    professionalName: [a.professional?.nombre, a.professional?.apellido].filter(Boolean).join(" ").trim() || a.professional?.user?.email || "",
+                    patientName: [a.patient?.nombre, a.patient?.apellido].filter(Boolean).join(" ").trim() || a.patient?.user?.email || "Sin nombre",
+                    professionalName: [a.professional?.nombre, a.professional?.apellido].filter(Boolean).join(" ").trim() || "",
                     paymentId: payment?.id ?? null,
                     paymentStatus: payment?.status ?? null,
                 };
             })
         });
+
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 });
     }

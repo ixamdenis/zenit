@@ -1,25 +1,30 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { ProfessionalService, Role } from "@prisma/client";
+import { ProfessionalService } from "@prisma/client";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import allLocales from '@fullcalendar/core/locales-all'; // Revertido a allLocales por ser más robusto si ya está instalado
+import allLocales from '@fullcalendar/core/locales-all';
 import Link from "next/link";
 
+// --- HELPERS Y UTILS ---
 
-// --- FUNCIÓN CLAVE PARA ELIMINAR ACENTOS ---
 const removeAccents = (str: string) => {
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 };
-// ------------------------------------------
 
-// --- TIPO FALTANTE CORREGIDO ---
-type SlotsResp = { slots: string[]; professionalId?: string; error?: string; services?: ProfessionalService[] };
+async function safeJson<T = any>(r: Response): Promise<{ ok: boolean; data: T | null; error: string | null; status: number }> {
+    const status = r.status;
+    let txt = ""; try { txt = await r.text(); } catch (e: any) { return { ok: r.ok, data: null, error: e?.message ?? "No se pudo leer la respuesta", status }; }
+    if (!txt) return { ok: r.ok, data: null, error: r.ok ? null : `Error HTTP ${status}`, status };
+    try { const json = JSON.parse(txt); return { ok: r.ok, data: json, error: r.ok ? null : (json as any)?.error ?? `Error HTTP ${status}`, status }; }
+    catch { return { ok: r.ok, data: null, error: r.ok ? null : txt, status }; }
+}
 
-// Interfaces para la UI
+// --- TIPOS ---
+
 interface UIUser {
     id: string; // patientId
     email: string;
@@ -37,16 +42,30 @@ interface UIProfessional {
     email: string;
 }
 
-interface UIAppointment {
-    id: string;
-    startAt: string;
-    endAt: string;
-    estado: string;
-    serviceName: string;
-    patientName: string;
-    professionalName: string;
-    isPaid: boolean;
-}
+// Tipo para la respuesta de la lista de turnos
+type ListResp = {
+    range: { from: string; to: string };
+    count: number;
+    appointments: {
+        id: string;
+        estado: string;
+        startAt: string;
+        endAt: string;
+        serviceId: string;
+        serviceName: string;
+        roomId: string | null;
+        roomName: string | null;
+        patientId: string;
+        professionalId: string;
+        patientName: string;
+        professionalName: string;
+        paymentId: string | null;
+        paymentStatus: "PENDING" | "PAID" | "CANCELED" | null;
+    }[];
+    error?: string;
+};
+
+type SlotsResp = { slots: string[]; professionalId?: string; error?: string; services?: ProfessionalService[] };
 
 interface NewPatientForm {
     nombre: string;
@@ -61,16 +80,9 @@ interface NewPatientForm {
     hasNoEmail: boolean;
 }
 
-// Helper para parsear JSON de forma segura
-async function safeJson<T = any>(r: Response): Promise<{ ok: boolean; data: T | null; error: string | null; status: number }> {
-    const status = r.status;
-    let txt = ""; try { txt = await r.text(); } catch (e: any) { return { ok: r.ok, data: null, error: e?.message ?? "No se pudo leer la respuesta", status }; }
-    if (!txt) return { ok: r.ok, data: null, error: r.ok ? null : `Error HTTP ${status}`, status };
-    try { const json = JSON.parse(txt); return { ok: r.ok, data: json, error: r.ok ? null : (json as any)?.error ?? `Error HTTP ${status}`, status }; }
-    catch { return { ok: r.ok, data: null, error: r.ok ? null : txt, status }; }
-}
+// --- COMPONENTES AUXILIARES ---
 
-// Componente para el formulario de registro (Modal)
+// Formulario Modal de Registro de Paciente
 const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { onClose: () => void, onSuccess: (email: string) => void, initialEmail?: string }) => {
     const [form, setForm] = useState<NewPatientForm>({
         nombre: "", apellido: "", email: initialEmail, dni: "", telefono: "", fechaNacimiento: "", localidad: "", tieneObraSocial: false, obraSocialNombre: "", hasNoEmail: false
@@ -116,12 +128,12 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                <h2 className="h2 flex justify-between items-center mb-4">
-                    Registro Completo de Paciente
+            <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white p-6 rounded-xl shadow-2xl">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-bold">Registro Completo de Paciente</h2>
                     <button onClick={onClose} className="text-red-600 text-sm hover:underline">Cerrar</button>
-                </h2>
-                <p className="text-xs text-muted mb-3">Clave genérica: <strong>Zenit123</strong>. DNI es obligatorio. Login será por Email o DNI.</p>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">Clave genérica: <strong>Zenit123</strong>. DNI es obligatorio. Login será por Email o DNI.</p>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
@@ -135,7 +147,6 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
                         </div>
                     </div>
 
-                    {/* --- CHECKBOX Y CAMPO EMAIL --- */}
                     <div className="flex items-center gap-3">
                         <input
                             type="checkbox"
@@ -151,7 +162,6 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
                         <label className="block text-sm font-medium">Email {!form.hasNoEmail && "*"}</label>
                         <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input mt-1" required={!form.hasNoEmail} disabled={form.hasNoEmail} />
                     </div>
-                    {/* ----------------------------- */}
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -208,6 +218,28 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
     );
 };
 
+// Renderizado personalizado de eventos del calendario
+function renderEventContent(eventInfo: any) {
+    const { extendedProps } = eventInfo.event;
+    const isPaid = extendedProps.isPaid;
+    // Estilos condicionales según estado de pago
+    const statusColor = isPaid
+        ? "bg-green-50 text-green-800 border-green-400"
+        : "bg-amber-50 text-amber-800 border-amber-400";
+    const dotColor = isPaid ? "bg-green-500" : "bg-amber-500";
+
+    return (
+        <div className={`w-full h-full p-1 border-l-4 text-xs overflow-hidden flex flex-col leading-tight ${statusColor} rounded-sm`}>
+            <div className="font-bold flex justify-between items-center mb-0.5">
+                <span>{eventInfo.timeText}</span>
+                <div className={`w-2 h-2 rounded-full ${dotColor}`} title={isPaid ? "Pagado" : "Pendiente"}></div>
+            </div>
+            <div className="font-semibold truncate" title={extendedProps.patientName}>{extendedProps.patientName}</div>
+            <div className="truncate opacity-90 text-[10px]">{extendedProps.serviceName}</div>
+            <div className="truncate opacity-75 italic text-[10px]">{extendedProps.professionalName}</div>
+        </div>
+    );
+}
 
 // Helper para navegar al perfil
 const handleViewProfile = (patientId: string) => {
@@ -215,20 +247,25 @@ const handleViewProfile = (patientId: string) => {
 };
 
 
+// --- COMPONENTE PRINCIPAL ---
+
 export default function RecepcionPage() {
     const [msg, setMsg] = useState<string>("");
+    const [loading, setLoading] = useState(false);
 
     // Datos maestros
     const [pacientesList, setPacientesList] = useState<UIUser[]>([]);
     const [profesionales, setProfesionales] = useState<UIProfessional[]>([]);
     const [services, setServices] = useState<ProfessionalService[]>([]);
-    const [appointments, setAppointments] = useState<UIAppointment[]>([]);
-    const [loading, setLoading] = useState(false);
+
+    // Estado del calendario (Eventos)
+    // Usamos 'any[]' para que coincida con la estructura de eventos de FullCalendar
+    const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
 
     // Estados de UI y búsqueda
     const [isRegistering, setIsRegistering] = useState(false);
     const [filterText, setFilterText] = useState("");
-    const [slots, setSlots] = useState<string[]>([]); // Slots disponibles
+    const [slots, setSlots] = useState<string[]>([]); // Slots disponibles para creación manual
 
     // Estado Formulario Nuevo Turno
     const [newAppointment, setNewAppointment] = useState({
@@ -239,18 +276,15 @@ export default function RecepcionPage() {
         time: "", // Almacena el ISO string del slot seleccionado
     });
 
-    // Filtra la lista de pacientes basándose en el texto de búsqueda
+    // Filtro de pacientes (Buscador)
     const filteredPacientesList = useMemo(() => {
         if (!filterText) return pacientesList;
-
         const normalizedSearch = removeAccents(filterText.toLowerCase());
-
         return pacientesList.filter(p => {
             const normalizedNombre = removeAccents(p.nombre.toLowerCase());
             const normalizedApellido = removeAccents(p.apellido.toLowerCase());
             const normalizedDni = removeAccents(p.dni.toLowerCase());
             const fullNormalizedName = `${normalizedNombre} ${normalizedApellido}`;
-
             return (
                 fullNormalizedName.includes(normalizedSearch) ||
                 normalizedDni.includes(normalizedSearch) ||
@@ -263,7 +297,6 @@ export default function RecepcionPage() {
     const fetchPacientes = useCallback(async () => {
         const rDump = await fetch("/api/debug/dump");
         const dDump = await rDump.json();
-
         const pacientesMapped: UIUser[] = (dDump.patients || []).map((p: any) => ({
             id: p.patientId,
             email: p.userEmail,
@@ -275,37 +308,15 @@ export default function RecepcionPage() {
         setPacientesList(pacientesMapped);
     }, []);
 
-    // Carga inicial (Incluye Fetch de Pacientes, Profesionales y Turnos)
+    // Carga inicial: Pacientes y Profesionales (NO Turnos, eso lo maneja el calendario)
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
             try {
                 await fetchPacientes();
-
-                // 2. Cargar Profesionales
                 const rProf = await fetch("/api/paciente/profesionales");
                 const dProf = await rProf.json();
                 setProfesionales(dProf.professionals || []);
-
-                // 3. Cargar Turnos (del día de hoy por defecto)
-                const todayStr = new Date().toISOString().split('T')[0];
-                const rAppts = await fetch(`/api/appointments/list?date=${todayStr}`);
-                const dAppts = await rAppts.json();
-
-                if (dAppts.appointments) {
-                    const mappedAppts: UIAppointment[] = dAppts.appointments.map((a: any) => ({
-                        id: a.id,
-                        startAt: a.startAt,
-                        endAt: a.endAt,
-                        estado: a.estado,
-                        serviceName: a.serviceName,
-                        patientName: a.patientName,
-                        professionalName: a.professionalName,
-                        isPaid: a.paymentStatus === 'PAID'
-                    }));
-                    setAppointments(mappedAppts);
-                }
-
             } catch (e) {
                 console.error(e);
                 setMsg("Error al cargar datos iniciales");
@@ -316,7 +327,56 @@ export default function RecepcionPage() {
         fetchData();
     }, [fetchPacientes]);
 
-    // Cargar servicios y slots
+    // Lógica del Calendario: Cargar turnos cuando cambia el rango visible
+    const handleDatesSet = async (arg: any) => {
+        const startISO = arg.start.toISOString();
+        const endISO = arg.end.toISOString();
+
+        // Usamos un flag de loading local o global si queremos mostrar spinner sobre el calendario
+        // Por ahora usamos console para debug o el loading global si es muy lento
+        // setLoading(true); 
+
+        try {
+            const qs = new URLSearchParams({
+                from: startISO,
+                to: endISO
+                // Aquí se podrían agregar filtros globales de profesional si existieran en la UI
+            });
+
+            const r = await fetch(`/api/appointments/list?${qs.toString()}`);
+            const { ok, data } = await safeJson<ListResp>(r);
+
+            if (ok && data?.appointments) {
+                const mappedEvents = data.appointments.map((a: any) => ({
+                    id: a.id,
+                    start: a.startAt,
+                    end: a.endAt,
+                    // extendedProps guarda la data para el renderizado custom
+                    extendedProps: {
+                        patientName: a.patientName,
+                        professionalName: a.professionalName,
+                        serviceName: a.serviceName,
+                        isPaid: a.paymentStatus === 'PAID',
+                        estado: a.estado
+                    },
+                    // Propiedades estándar de fallback (aunque usamos renderEventContent)
+                    title: a.patientName,
+                    backgroundColor: 'transparent',
+                    borderColor: 'transparent',
+                    textColor: 'black',
+                    classNames: ['cursor-pointer'] // Clase para indicar clic
+                }));
+                setCalendarEvents(mappedEvents);
+            }
+        } catch (e) {
+            console.error("Error cargando rango calendario", e);
+        } finally {
+            // setLoading(false);
+        }
+    };
+
+
+    // Cargar servicios y slots para el formulario manual
     useEffect(() => {
         const fetchServicesAndSlots = async () => {
             const { date, profesionalEmail, serviceName } = newAppointment;
@@ -355,7 +415,7 @@ export default function RecepcionPage() {
     }, [newAppointment.profesionalEmail, newAppointment.serviceName, newAppointment.date]);
 
 
-    // Acción: Crear Turno
+    // Acción: Crear Turno Manual
     const createAppointment = async () => {
         setMsg("");
         const { pacienteId, profesionalEmail, serviceName, date, time } = newAppointment;
@@ -380,7 +440,14 @@ export default function RecepcionPage() {
             const res = await r.json();
             if (r.ok) {
                 setMsg(`Turno con ${res.appointment.professionalService.nombre} creado con éxito.`);
-                // Recargar lista de turnos (opcional)
+                // Forzamos refresco del calendario simulando un cambio de fecha o recargando la página si es necesario
+                // Una forma simple es disparar de nuevo handleDatesSet si tuviéramos acceso a la ref del calendario, 
+                // pero recargar la página o limpiar el form es buen feedback inmediato.
+                setNewAppointment({ ...newAppointment, time: "" });
+                // Nota: El calendario no se actualiza automáticamente aquí a menos que refetchees. 
+                // Como handleDatesSet depende del estado interno de FullCalendar, lo ideal sería refetchear manualmente.
+                // Por simplicidad en este MVP, el usuario verá el turno si navega o refresca.
+                window.location.reload();
             } else {
                 setMsg(res.error || "Error al crear turno");
             }
@@ -389,20 +456,10 @@ export default function RecepcionPage() {
         }
     };
 
-    // Renderizado de eventos para FullCalendar
-    const calendarEvents = appointments.map(app => ({
-        id: app.id,
-        title: `${app.patientName} - ${app.serviceName}`,
-        start: app.startAt,
-        end: app.endAt,
-        backgroundColor: app.isPaid ? '#10b981' : '#3b82f6',
-        borderColor: app.isPaid ? '#059669' : '#2563eb',
-    }));
-
-    // Solución para la localización de FullCalendar
+    // Configuración de localización para FullCalendar
     const localeEs = {
         code: 'es',
-        week: { dow: 1, doy: 4 },
+        week: { dow: 1, doy: 4 }, // Lunes primer día
         buttonText: { prev: 'Ant', next: 'Sig', today: 'Hoy', month: 'Mes', week: 'Semana', day: 'Día', list: 'Agenda' },
         weekText: 'Sm', allDayText: 'Todo el día', moreLinkText: 'más', noEventsText: 'No hay eventos para mostrar'
     };
@@ -525,7 +582,7 @@ export default function RecepcionPage() {
                             onChange={e => setNewAppointment({ ...newAppointment, time: e.target.value })}
                             disabled={!slots.length}
                         >
-                            <option value="">{newAppointment.date && !newAppointment.profesionalEmail || !newAppointment.serviceName ? "Selecciona Profesional/Servicio" : slots.length === 0 ? "Sin horarios" : "-- Elegir --"}</option>
+                            <option value="">{newAppointment.date && (!newAppointment.profesionalEmail || !newAppointment.serviceName) ? "Faltan datos" : slots.length === 0 ? "Sin horarios" : "-- Elegir --"}</option>
 
                             {slots.map(s => (
                                 <option key={s} value={s}>
@@ -548,8 +605,8 @@ export default function RecepcionPage() {
             <section className="card">
                 <h2 className="h2 mb-4">Gestión de Pacientes</h2>
                 <p className="text-sm text-muted mb-3">Haga clic en un paciente para ver su perfil completo.</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {pacientesList.map(p => (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-h-60 overflow-y-auto">
+                    {pacientesList.slice(0, 12).map(p => (
                         <div
                             key={p.id}
                             className="card p-3 hover:bg-gray-50 cursor-pointer border border-transparent hover:border-brand-primary transition"
@@ -562,9 +619,16 @@ export default function RecepcionPage() {
                 </div>
             </section>
 
-            {/* 3. CALENDARIO */}
+            {/* 3. CALENDARIO SEMANAL MEJORADO */}
             <section className="card overflow-hidden">
-                <h2 className="h2 mb-4">Agenda Semanal</h2>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="h2">Agenda Semanal</h2>
+                    <div className="flex gap-4 text-xs bg-gray-50 p-2 rounded-lg">
+                        <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-green-500"></div> Pagado</span>
+                        <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-amber-500"></div> Pendiente</span>
+                    </div>
+                </div>
+
                 <FullCalendar
                     plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                     initialView="timeGridWeek"
@@ -572,13 +636,26 @@ export default function RecepcionPage() {
                     headerToolbar={{
                         left: 'prev,next today',
                         center: 'title',
-                        right: 'dayGridMonth,timeGridWeek'
+                        right: 'dayGridMonth,timeGridWeek,timeGridDay'
                     }}
+                    // PROPIEDAD CLAVE: Carga turnos según el rango visible
+                    datesSet={handleDatesSet}
                     events={calendarEvents}
+                    // Renderizado Personalizado (Bloques ricos)
+                    eventContent={renderEventContent}
+
                     height="auto"
                     slotMinTime="08:00:00"
                     slotMaxTime="21:00:00"
                     allDaySlot={false}
+                    slotDuration="00:15:00" // Slots de 15 minutos
+                    eventClick={(info) => {
+                        // Acción al hacer click en el evento
+                        const props = info.event.extendedProps;
+                        const msg = `Turno: ${props.patientName}\nServicio: ${props.serviceName}\nEstado Pago: ${props.isPaid ? "PAGADO" : "PENDIENTE"}`;
+                        alert(msg);
+                        // Aquí podrías redirigir a la página de pagos o abrir un modal de detalle
+                    }}
                 />
             </section>
         </div>

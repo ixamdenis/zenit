@@ -35,10 +35,11 @@ export default function LoginPage() {
             if (!res.ok) {
                 setMsg(data.error || "Email o contraseña incorrectos.");
             } else {
-                // ¡Éxito! Redirigimos a la raíz.
-                // La raíz ("/") se encargará de llevar al usuario
-                // a su panel correcto (Recepción, Profesional, etc.)
-                router.push("/");
+                // ¡Éxito!
+                // Usamos window.location.href en lugar de router.push
+                // para forzar una recarga completa. Esto asegura que el Header
+                // (que está en el Layout) se vuelva a montar y lea la sesión nueva.
+                window.location.href = "/";
             }
         } catch (error) {
             setMsg("Ocurrió un error inesperado.");
@@ -68,11 +69,11 @@ export default function LoginPage() {
                     <div>
                         <label className="block text-sm font-medium">Email</label>
                         <input
-                            type="email"
+                            type="text" // Cambiado a text para permitir DNI sin validación estricta de email HTML5
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             className="input mt-1"
-                            placeholder="juan@correo.com"
+                            placeholder="Email o DNI"
                         />
                     </div>
 
