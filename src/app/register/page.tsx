@@ -32,6 +32,7 @@ export default function RegisterPage() {
     const [localidad, setLocalidad] = useState("");
     const [tieneObraSocial, setTieneObraSocial] = useState(false);
     const [obraSocialNombre, setObraSocialNombre] = useState("");
+    const [hasNoEmail, setHasNoEmail] = useState(false); // <--- NUEVO ESTADO
 
     // --- Datos de Profesional ---
     const [especialidad, setEspecialidad] = useState("");
@@ -49,10 +50,23 @@ export default function RegisterPage() {
         setLoading(true);
         setMsg("");
 
-        if (!nombre || !apellido || !email || !password) {
-            setMsg("Por favor, completa los campos básicos (Nombre, Apellido, Email, Contraseña).");
+        if (!nombre || !apellido || !password || !role) {
+            setMsg("Por favor, completa los campos básicos (Nombre, Apellido, Contraseña).");
             setLoading(false);
             return;
+        }
+
+        if (role === Role.PACIENTE) {
+            if (!dni) {
+                setMsg("El DNI es obligatorio para el registro de paciente.");
+                setLoading(false);
+                return;
+            }
+            if (!email && !hasNoEmail) {
+                setMsg("El Email es obligatorio, o debes marcar 'No tiene email'.");
+                setLoading(false);
+                return;
+            }
         }
 
         // Validación extra si es profesional
@@ -68,13 +82,14 @@ export default function RegisterPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     // User
-                    email,
+                    email: hasNoEmail ? "" : email, // Enviamos vacío si marca el check
                     password,
                     role,
+                    hasNoEmail, // <--- ENVIAR EL FLAG
                     // Perfil (común)
                     nombre,
                     apellido,
-                    fechaNacimiento: fechaNacimiento || null, // Enviar null si está vacío
+                    fechaNacimiento: fechaNacimiento || null,
                     // Paciente
                     dni,
                     telefono,
@@ -127,7 +142,11 @@ export default function RegisterPage() {
                         <label className="block text-sm font-medium">Quiero registrarme como</label>
                         <select
                             value={role}
-                            onChange={(e) => setRole(e.target.value as Role)}
+                            onChange={(e) => {
+                                setRole(e.target.value as Role);
+                                setHasNoEmail(false); // Resetear al cambiar de rol
+                                setEmail("");
+                            }}
                             className="input mt-1"
                         >
                             <option value={Role.PACIENTE}>Paciente</option>
@@ -159,16 +178,38 @@ export default function RegisterPage() {
                         </div>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium">Email</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="input mt-1"
-                            placeholder="juan@correo.com"
-                        />
-                    </div>
+                    {/* --- Campo Email Condicional --- */}
+                    {(role !== Role.PACIENTE || !hasNoEmail) && (
+                        <div style={{ opacity: role === Role.PACIENTE && hasNoEmail ? 0.5 : 1 }}>
+                            <label className="block text-sm font-medium">Email {role !== Role.PACIENTE ? "*" : !hasNoEmail && "*"}</label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="input mt-1"
+                                placeholder="juan@correo.com"
+                                required={role !== Role.PACIENTE && !hasNoEmail}
+                                disabled={role === Role.PACIENTE && hasNoEmail}
+                            />
+                        </div>
+                    )}
+
+                    {/* --- Checkbox "No tiene Email" (Solo para PACIENTE) --- */}
+                    {role === Role.PACIENTE && (
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="checkbox"
+                                id="noEmailCheck"
+                                checked={hasNoEmail}
+                                onChange={(e) => {
+                                    setHasNoEmail(e.target.checked);
+                                    if (e.target.checked) setEmail(""); // Limpiar email si marca el check
+                                }}
+                                className="h-4 w-4 rounded"
+                            />
+                            <label htmlFor="noEmailCheck" className="text-sm font-medium">No tiene email (Usar DNI para login)</label>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-sm font-medium">Contraseña</label>
@@ -197,12 +238,13 @@ export default function RegisterPage() {
                             <h2 className="font-semibold">Completar perfil de Paciente</h2>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium">DNI</label>
+                                    <label className="block text-sm font-medium">DNI *</label>
                                     <input
                                         type="text"
                                         value={dni}
                                         onChange={(e) => setDni(e.target.value)}
                                         className="input mt-1"
+                                        required
                                     />
                                 </div>
                                 <div>

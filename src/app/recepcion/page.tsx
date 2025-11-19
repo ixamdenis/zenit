@@ -6,18 +6,15 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import localeEs from '@fullcalendar/core/locales/es';
+import allLocales from '@fullcalendar/core/locales-all'; // Revertido a allLocales por ser más robusto si ya está instalado
 import Link from "next/link";
 
 
 // --- FUNCIÓN CLAVE PARA ELIMINAR ACENTOS ---
 const removeAccents = (str: string) => {
-    // Normaliza a una forma de descomposición canónica (NFD)
-    // y luego usa una expresión regular para remover los caracteres diacríticos.
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 };
 // ------------------------------------------
-
 
 // --- TIPO FALTANTE CORREGIDO ---
 type SlotsResp = { slots: string[]; professionalId?: string; error?: string; services?: ProfessionalService[] };
@@ -61,6 +58,7 @@ interface NewPatientForm {
     localidad: string;
     tieneObraSocial: boolean;
     obraSocialNombre: string;
+    hasNoEmail: boolean;
 }
 
 // Helper para parsear JSON de forma segura
@@ -75,7 +73,7 @@ async function safeJson<T = any>(r: Response): Promise<{ ok: boolean; data: T | 
 // Componente para el formulario de registro (Modal)
 const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { onClose: () => void, onSuccess: (email: string) => void, initialEmail?: string }) => {
     const [form, setForm] = useState<NewPatientForm>({
-        nombre: "", apellido: "", email: initialEmail, dni: "", telefono: "", fechaNacimiento: "", localidad: "", tieneObraSocial: false, obraSocialNombre: ""
+        nombre: "", apellido: "", email: initialEmail, dni: "", telefono: "", fechaNacimiento: "", localidad: "", tieneObraSocial: false, obraSocialNombre: "", hasNoEmail: false
     });
     const [creating, setCreating] = useState(false);
     const [msg, setMsg] = useState("");
@@ -84,9 +82,14 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
         e.preventDefault();
         setMsg("");
 
-        const { nombre, apellido, email, dni } = form;
-        if (!nombre || !apellido || !email || !dni) {
-            setMsg("Por favor, completa los campos obligatorios (Nombre, Apellido, Email, DNI).");
+        const { nombre, apellido, email, dni, hasNoEmail } = form;
+        if (!nombre || !apellido || !dni) {
+            setMsg("Por favor, completa los campos obligatorios (Nombre, Apellido, DNI).");
+            return;
+        }
+
+        if (!email && !hasNoEmail) {
+            setMsg("El Email es obligatorio, o debes marcar 'No tiene email'.");
             return;
         }
 
@@ -99,7 +102,8 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
             const data = await r.json();
 
             if (r.ok) {
-                onSuccess(email);
+                const returnEmail = hasNoEmail ? `dni-${dni.replace(/[^0-9]/g, '')}@nodireccion.zenit` : email;
+                onSuccess(returnEmail);
             } else {
                 setMsg(data.error ?? "Error al registrar paciente.");
             }
@@ -117,7 +121,7 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
                     Registro Completo de Paciente
                     <button onClick={onClose} className="text-red-600 text-sm hover:underline">Cerrar</button>
                 </h2>
-                <p className="text-xs text-muted mb-3">Se creará con clave genérica: <strong>Zenit123</strong>. DNI es obligatorio.</p>
+                <p className="text-xs text-muted mb-3">Clave genérica: <strong>Zenit123</strong>. DNI es obligatorio. Login será por Email o DNI.</p>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
@@ -130,10 +134,25 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
                             <input type="text" value={form.apellido} onChange={(e) => setForm({ ...form, apellido: e.target.value })} className="input mt-1" required />
                         </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium">Email *</label>
-                        <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input mt-1" required />
+
+                    {/* --- CHECKBOX Y CAMPO EMAIL --- */}
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="checkbox"
+                            id="noEmailCheck"
+                            checked={form.hasNoEmail}
+                            onChange={(e) => setForm(p => ({ ...p, hasNoEmail: e.target.checked, email: e.target.checked ? "" : p.email }))}
+                            className="h-4 w-4 rounded"
+                        />
+                        <label htmlFor="noEmailCheck" className="text-sm font-medium">No tiene email (Login con DNI)</label>
                     </div>
+
+                    <div style={{ opacity: form.hasNoEmail ? 0.5 : 1 }}>
+                        <label className="block text-sm font-medium">Email {!form.hasNoEmail && "*"}</label>
+                        <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input mt-1" required={!form.hasNoEmail} disabled={form.hasNoEmail} />
+                    </div>
+                    {/* ----------------------------- */}
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium">DNI *</label>
@@ -189,6 +208,13 @@ const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { on
     );
 };
 
+
+// Helper para navegar al perfil
+const handleViewProfile = (patientId: string) => {
+    window.location.href = `/recepcion/perfil-paciente/${patientId}`;
+};
+
+
 export default function RecepcionPage() {
     const [msg, setMsg] = useState<string>("");
 
@@ -213,31 +239,25 @@ export default function RecepcionPage() {
         time: "", // Almacena el ISO string del slot seleccionado
     });
 
-    // --- BLOQUE CORREGIDO CON FILTRADO ACCENT-INSENSITIVE ---
+    // Filtra la lista de pacientes basándose en el texto de búsqueda
     const filteredPacientesList = useMemo(() => {
         if (!filterText) return pacientesList;
 
-        // 1. Normalizar y lower case la búsqueda una sola vez
         const normalizedSearch = removeAccents(filterText.toLowerCase());
 
         return pacientesList.filter(p => {
-
-            // 2. Normalizar y lower case los campos del paciente
             const normalizedNombre = removeAccents(p.nombre.toLowerCase());
             const normalizedApellido = removeAccents(p.apellido.toLowerCase());
             const normalizedDni = removeAccents(p.dni.toLowerCase());
-            const normalizedEmail = removeAccents(p.email.toLowerCase());
+            const fullNormalizedName = `${normalizedNombre} ${normalizedApellido}`;
 
-            // 3. Chequear si la búsqueda está incluida en cualquiera de los campos normalizados
             return (
-                normalizedNombre.includes(normalizedSearch) ||
-                normalizedApellido.includes(normalizedSearch) ||
-                normalizedEmail.includes(normalizedSearch) ||
-                normalizedDni.includes(normalizedSearch)
+                fullNormalizedName.includes(normalizedSearch) ||
+                normalizedDni.includes(normalizedSearch) ||
+                p.email.includes(normalizedSearch)
             );
         });
     }, [pacientesList, filterText]);
-    // ----------------------------------------------------
 
 
     const fetchPacientes = useCallback(async () => {
@@ -379,6 +399,14 @@ export default function RecepcionPage() {
         borderColor: app.isPaid ? '#059669' : '#2563eb',
     }));
 
+    // Solución para la localización de FullCalendar
+    const localeEs = {
+        code: 'es',
+        week: { dow: 1, doy: 4 },
+        buttonText: { prev: 'Ant', next: 'Sig', today: 'Hoy', month: 'Mes', week: 'Semana', day: 'Día', list: 'Agenda' },
+        weekText: 'Sm', allDayText: 'Todo el día', moreLinkText: 'más', noEventsText: 'No hay eventos para mostrar'
+    };
+
     if (loading) return <div className="p-8 text-center">Cargando panel...</div>;
 
     return (
@@ -516,7 +544,25 @@ export default function RecepcionPage() {
                 </div>
             </section>
 
-            {/* 2. CALENDARIO (Localización en Español Manual) */}
+            {/* 2. GESTIÓN DE PACIENTES */}
+            <section className="card">
+                <h2 className="h2 mb-4">Gestión de Pacientes</h2>
+                <p className="text-sm text-muted mb-3">Haga clic en un paciente para ver su perfil completo.</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {pacientesList.map(p => (
+                        <div
+                            key={p.id}
+                            className="card p-3 hover:bg-gray-50 cursor-pointer border border-transparent hover:border-brand-primary transition"
+                            onClick={() => handleViewProfile(p.id)}
+                        >
+                            <p className="font-medium">{p.nombre} {p.apellido}</p>
+                            <p className="text-sm text-muted">DNI: {p.dni || 'N/A'}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* 3. CALENDARIO */}
             <section className="card overflow-hidden">
                 <h2 className="h2 mb-4">Agenda Semanal</h2>
                 <FullCalendar

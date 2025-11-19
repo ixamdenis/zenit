@@ -1,13 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 
+// 1. Define las rutas que queremos proteger
 const protectedRoutes: Record<string, string[]> = {
+    // --- RUTAS CON EXCEPCIONES ESPECÍFICAS DEBEN IR PRIMERO ---
+    // Excepción: Permitir a profesionales ver perfiles de pacientes (ruta completa)
+    "/recepcion/perfil-paciente": ["ADMIN", "RECEPCION", "PROFESIONAL"],
+
+    // Rutas de Recepción (General)
     "/recepcion": ["ADMIN", "RECEPCION"],
     "/pagos": ["ADMIN", "RECEPCION"],
-    "/profesional": ["PROFESIONAL"],
-    "/paciente": ["PACIENTE"],
+
+    // Ruta Profesional
+    "/profesional": ["PROFESIONAL", "ADMIN"],
+
+    // Ruta Paciente
+    "/paciente": ["PACIENTE", "ADMIN"],
 };
 
+// 2. Define las rutas públicas (donde NO se necesita sesión)
 const publicRoutes = [
     "/login",
     "/register",
@@ -15,11 +26,13 @@ const publicRoutes = [
     "/api/auth/crear-cuenta",
     "/api/auth/me",
     "/api/auth/logout",
-    "/api/auth/cambiar-password"
+    "/api/auth/cambiar-password",
 ];
 
 export async function middleware(req: NextRequest) {
     const path = req.nextUrl.pathname;
+
+    // --- Lógica de rutas públicas ---
     const isPublic = publicRoutes.some((p) => path.startsWith(p));
     const session = await getSession();
 
@@ -30,30 +43,38 @@ export async function middleware(req: NextRequest) {
         return NextResponse.next();
     }
 
+    // --- Lógica de rutas protegidas ---
     if (!session) {
-        if (path === "/login") return NextResponse.next();
+        if (path === "/login") {
+            return NextResponse.next();
+        }
+        console.log(`[Middleware] Usuario no autenticado intentando acceder a ${path}. Redirigiendo a /login.`);
         return NextResponse.redirect(new URL("/login", req.url));
     }
 
-    // Lógica: Redirigir a cambiar-password si es obligatorio
-    if (session.mustChangePassword && path !== "/cambiar-password") {
-        return NextResponse.redirect(new URL("/cambiar-password", req.url));
-    }
-
-    if (!session.mustChangePassword && path === "/cambiar-password") {
-        return NextResponse.redirect(new URL("/", req.url));
-    }
-
-    // Lógica: Restricción por Rol
+    // El orden de las claves en protectedRoutes es crucial.
     const protectedRouteRule = Object.keys(protectedRoutes).find(
         (routePrefix) => path.startsWith(routePrefix)
     );
 
+    // --- Lógica de cambio de password obligatorio ---
+    if (session.mustChangePassword && path !== "/cambiar-password") {
+        return NextResponse.redirect(new URL("/cambiar-password", req.url));
+    }
+    if (!session.mustChangePassword && path === "/cambiar-password") {
+        return NextResponse.redirect(new URL("/", req.url));
+    }
+    // -----------------------------------------------
+
     if (protectedRouteRule) {
         const allowedRoles = protectedRoutes[protectedRouteRule];
+
         if (allowedRoles.includes(session.role)) {
+            // ¡Permiso concedido!
             return NextResponse.next();
         } else {
+            // No tiene el rol correcto.
+            console.warn(`[Middleware] Usuario ${session.email} (Rol: ${session.role}) sin permiso para ${path}.`);
             return NextResponse.redirect(new URL("/", req.url));
         }
     }
@@ -61,6 +82,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
 }
 
+// 3. Configuración del Matcher
 export const config = {
     matcher: [
         "/((?!api/health|_next/static|_next/image|favicon.ico|zenit-logo@2x.png).*)",

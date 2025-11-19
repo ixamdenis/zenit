@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import type { SessionPayload } from "@/lib/session";
 
+// --- HELPERS Y TIPOS ---
+
+// Función para remover acentos (para búsqueda)
+const removeAccents = (str: string) => {
+    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+};
+
 type DumpData = {
-    patients: { patientId: string; nombre: string; apellido: string; userEmail: string }[];
+    patients: { patientId: string; nombre: string; apellido: string; dni: string; userEmail: string }[];
 };
 type Service = { id: string; nombre: string; duracionMin: number; precioBase: number };
 type SlotsResp = { slots: string[]; professionalId?: string; error?: string };
@@ -20,13 +27,18 @@ type ListResp = {
     error?: string;
 };
 
-// Definimos la interfaz para el formulario de nuevo paciente
+// Interfaz para el formulario de registro completo (Incluye el nuevo flag)
 interface NewPatientForm {
     nombre: string;
     apellido: string;
     email: string;
     dni: string;
     telefono: string;
+    fechaNacimiento: string;
+    localidad: string;
+    tieneObraSocial: boolean;
+    obraSocialNombre: string;
+    hasNoEmail: boolean; // <--- FLAG AGREGADO
 }
 
 async function safeJson<T = any>(r: Response): Promise<{ ok: boolean; data: T | null; error: string | null; status: number }> {
@@ -37,6 +49,148 @@ async function safeJson<T = any>(r: Response): Promise<{ ok: boolean; data: T | 
     catch { return { ok: r.ok, data: null, error: r.ok ? null : txt, status }; }
 }
 function toYMD(d: Date) { const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, "0"); const da = String(d.getDate()).padStart(2, "0"); return `${y}-${m}-${da}`; }
+
+
+// --- COMPONENTE MODAL DE REGISTRO COMPLETO ---
+const PatientRegistrationForm = ({ onClose, onSuccess, initialEmail = "" }: { onClose: () => void, onSuccess: (email: string) => void, initialEmail?: string }) => {
+    const [form, setForm] = useState<NewPatientForm>({
+        nombre: "", apellido: "", email: initialEmail, dni: "", telefono: "", fechaNacimiento: "", localidad: "", tieneObraSocial: false, obraSocialNombre: "", hasNoEmail: false
+    });
+    const [creating, setCreating] = useState(false);
+    const [msg, setMsg] = useState("");
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setMsg("");
+
+        const { nombre, apellido, email, dni, hasNoEmail } = form;
+        if (!nombre || !apellido || !dni) {
+            setMsg("Por favor, completa los campos obligatorios (Nombre, Apellido, DNI).");
+            return;
+        }
+
+        if (!email && !hasNoEmail) {
+            setMsg("El Email es obligatorio, o debes marcar 'No tiene email'.");
+            return;
+        }
+
+        setCreating(true);
+        try {
+            const r = await fetch("/api/paciente/crear-manual", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(form)
+            });
+            const data = await r.json();
+
+            if (r.ok) {
+                // Si no tiene email, devolvemos el placeholder que el backend usa para identificar al usuario
+                const returnEmail = hasNoEmail ? `dni-${dni.replace(/[^0-9]/g, '')}@nodireccion.zenit` : email;
+                onSuccess(returnEmail);
+            } else {
+                setMsg(data.error ?? "Error al registrar paciente.");
+            }
+        } catch (error) {
+            setMsg("Error de conexión al intentar registrar.");
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                <h2 className="h2 flex justify-between items-center mb-4">
+                    Registro Completo de Paciente
+                    <button onClick={onClose} className="text-red-600 text-sm hover:underline">Cerrar</button>
+                </h2>
+                <p className="text-xs text-muted mb-3">Clave genérica: <strong>Zenit123</strong>. DNI es obligatorio. Login será por Email o DNI.</p>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium">Nombre *</label>
+                            <input type="text" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="input mt-1" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Apellido *</label>
+                            <input type="text" value={form.apellido} onChange={(e) => setForm({ ...form, apellido: e.target.value })} className="input mt-1" required />
+                        </div>
+                    </div>
+
+                    {/* --- CHECKBOX Y CAMPO EMAIL --- */}
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="checkbox"
+                            id="noEmailCheck"
+                            checked={form.hasNoEmail}
+                            onChange={(e) => setForm(p => ({ ...p, hasNoEmail: e.target.checked, email: e.target.checked ? "" : p.email }))}
+                            className="h-4 w-4 rounded"
+                        />
+                        <label htmlFor="noEmailCheck" className="text-sm font-medium">No tiene email (Login con DNI)</label>
+                    </div>
+
+                    <div style={{ opacity: form.hasNoEmail ? 0.5 : 1 }}>
+                        <label className="block text-sm font-medium">Email {!form.hasNoEmail && "*"}</label>
+                        <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input mt-1" required={!form.hasNoEmail} disabled={form.hasNoEmail} />
+                    </div>
+                    {/* ----------------------------- */}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium">DNI *</label>
+                            <input type="text" value={form.dni} onChange={(e) => setForm({ ...form, dni: e.target.value })} className="input mt-1" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Teléfono</label>
+                            <input type="tel" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} className="input mt-1" />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium">Fecha de Nacimiento</label>
+                            <input type="date" value={form.fechaNacimiento} onChange={(e) => setForm({ ...form, fechaNacimiento: e.target.value })} className="input mt-1" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium">Localidad</label>
+                            <input type="text" value={form.localidad} onChange={(e) => setForm({ ...form, localidad: e.target.value })} className="input mt-1" />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 mt-4">
+                        <input
+                            type="checkbox"
+                            id="obraSocialCheck"
+                            checked={form.tieneObraSocial}
+                            onChange={(e) => setForm({ ...form, tieneObraSocial: e.target.checked, obraSocialNombre: "" })}
+                            className="h-4 w-4 rounded"
+                        />
+                        <label htmlFor="obraSocialCheck" className="text-sm font-medium">Tiene Obra Social</label>
+                    </div>
+
+                    {form.tieneObraSocial && (
+                        <div>
+                            <label className="block text-sm font-medium">Nombre Obra Social</label>
+                            <input
+                                type="text"
+                                value={form.obraSocialNombre}
+                                onChange={(e) => setForm({ ...form, obraSocialNombre: e.target.value })}
+                                className="input mt-1"
+                                placeholder="Ej: OSDE"
+                            />
+                        </div>
+                    )}
+
+                    <button type="submit" disabled={creating} className="btn btn-primary w-full mt-6">
+                        {creating ? "Registrando..." : "Crear Paciente"}
+                    </button>
+                    {msg && <div className="mt-4 text-center text-sm text-red-600">{msg}</div>}
+                </form>
+            </div>
+        </div>
+    );
+};
+// --- FIN COMPONENTE MODAL ---
+
 
 export default function ProfesionalAgendaPage() {
     const todayISO = useMemo(() => toYMD(new Date()), []);
@@ -65,11 +219,19 @@ export default function ProfesionalAgendaPage() {
     const [editSelected, setEditSelected] = useState<Record<string, string>>({});
     const [msg, setMsg] = useState<string>("");
 
-    // --- ESTADOS NUEVOS PARA ALTA PACIENTE ---
+    // --- ESTADOS NUEVOS PARA ALTA PACIENTE y BÚSQUEDA ---
     const [isRegisteringPatient, setIsRegisteringPatient] = useState(false);
-    const [newPac, setNewPac] = useState<NewPatientForm>({ nombre: "", apellido: "", email: "", dni: "", telefono: "" });
-    const [creatingPac, setCreatingPac] = useState(false);
+    const [filterText, setFilterText] = useState("");
     // ----------------------------------------
+
+    // --- FUNCIÓN PARA RECARGAR PACIENTES ---
+    const fetchPatients = useCallback(async () => {
+        const r = await fetch("/api/debug/dump");
+        const data = await r.json();
+        setPatients(data.patients || []);
+    }, []);
+    // ----------------------------------------
+
 
     // 1. Cargar Sesión y Servicios
     useEffect(() => {
@@ -95,16 +257,10 @@ export default function ProfesionalAgendaPage() {
         })();
     }, []);
 
-    // 2. Cargar Pacientes
+    // 2. Cargar Pacientes (al inicio)
     useEffect(() => {
-        fetch("/api/debug/dump")
-            .then(r => r.json())
-            .then(data => {
-                setPatients(data.patients || []);
-                // No seleccionamos por defecto para obligar al usuario a elegir
-            })
-            .catch(() => { });
-    }, []);
+        fetchPatients().catch(() => { });
+    }, [fetchPatients]);
 
     // 3. Cargar Lista de turnos
     const loadList = async () => {
@@ -137,6 +293,26 @@ export default function ProfesionalAgendaPage() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [date, session, serviceName]);
+
+    // --- LÓGICA DE FILTRADO (Accent-Insensitive) ---
+    const filteredPacientesList = useMemo(() => {
+        if (!filterText) return patients;
+
+        const normalizedSearch = removeAccents(filterText.toLowerCase());
+
+        return patients.filter(p => {
+            const normalizedNombre = removeAccents(p.nombre.toLowerCase());
+            const normalizedApellido = removeAccents(p.apellido.toLowerCase());
+            const normalizedDni = removeAccents(p.dni?.toLowerCase() || "");
+            const fullNormalizedName = `${normalizedNombre} ${normalizedApellido}`;
+
+            return (
+                fullNormalizedName.includes(normalizedSearch) ||
+                normalizedDni.includes(normalizedSearch)
+            );
+        });
+    }, [patients, filterText]);
+    // ------------------------------------------------
 
 
     // --- ACCIONES DE TURNO ---
@@ -183,51 +359,11 @@ export default function ProfesionalAgendaPage() {
         setPayingId(null);
     };
 
-    // --- ACCION: CREAR PACIENTE MANUAL (MODAL) ---
-    const createPatientManual = async () => {
-        setMsg("");
-        if (!newPac.nombre || !newPac.apellido || !newPac.email || !newPac.dni) {
-            setMsg("Faltan datos obligatorios del paciente (Nombre, Apellido, Email, DNI)");
-            return;
-        }
-        setCreatingPac(true);
-        try {
-            const r = await fetch("/api/paciente/crear-manual", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(newPac)
-            });
-            const data = await r.json();
-
-            if (r.ok) {
-                setMsg(data.message || "Paciente creado. Clave temporal: Zenit123");
-
-                // Limpiar formulario y cerrar modal
-                setNewPac({ nombre: "", apellido: "", email: "", dni: "", telefono: "" });
-                setIsRegisteringPatient(false);
-
-                // Recargar la lista de pacientes para que aparezca el nuevo
-                fetch("/api/debug/dump")
-                    .then(r => r.json())
-                    .then(data => {
-                        setPatients(data.patients || []);
-                        // Opcional: Autoseleccionar el nuevo paciente (necesitamos saber su email)
-                        setPatientEmail(newPac.email);
-                    });
-            } else {
-                setMsg(data.error ?? "Error creando paciente");
-            }
-        } catch (error) {
-            setMsg("Error de conexión");
-        } finally {
-            setCreatingPac(false);
-        }
-    };
-
-    // Edit
     const startEdit = async (a: any) => {
         setEditingId(a.id);
         const cur = new Date(a.startAt); cur.setHours(0, 0, 0, 0);
         setEditDate(toYMD(cur));
+        // Cargar slots para edit
         const qs = new URLSearchParams({ date: toYMD(cur), professionalId: a.professionalId, ignoreAppointmentId: a.id, serviceName: a.serviceName });
         const r = await fetch(`/api/agenda?${qs.toString()}`);
         const { data } = await safeJson<SlotsResp>(r);
@@ -253,6 +389,20 @@ export default function ProfesionalAgendaPage() {
         <div className="space-y-6">
             <h1 className="h1">Mi Agenda</h1>
 
+            {/* --- Modal de Registro de Paciente COMPLETO --- */}
+            {isRegisteringPatient && (
+                <PatientRegistrationForm
+                    onClose={() => setIsRegisteringPatient(false)}
+                    onSuccess={async (email) => {
+                        setIsRegisteringPatient(false);
+                        setMsg(`Paciente ${email} creado con éxito. Clave temporal: Zenit123.`);
+                        await fetchPatients(); // Recargar lista de pacientes
+                        setPatientEmail(email); // Autoseleccionar el nuevo paciente
+                    }}
+                />
+            )}
+            {/* ------------------------------------------------ */}
+
             <section className="card">
                 <h2 className="h2">Ver día</h2>
                 <div className="mt-3">
@@ -260,56 +410,41 @@ export default function ProfesionalAgendaPage() {
                 </div>
             </section>
 
-            {/* --- Formulario de registro de paciente (Modal) --- */}
-            {isRegisteringPatient && (
-                <section className="card border-l-4 border-l-brand-primary bg-blue-50">
-                    <h2 className="h2 flex justify-between items-center">
-                        Registro Rápido de Paciente
-                        <button onClick={() => setIsRegisteringPatient(false)} className="text-red-600 text-sm hover:underline">Cerrar</button>
-                    </h2>
-                    <p className="text-xs text-muted mb-3">Clave genérica: <strong>Zenit123</strong>. DNI obligatorio.</p>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                        <div>
-                            <label className="text-xs font-bold uppercase text-muted">Nombre</label>
-                            <input className="input mt-1" value={newPac.nombre} onChange={e => setNewPac({ ...newPac, nombre: e.target.value })} placeholder="Nombre" required />
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold uppercase text-muted">Apellido</label>
-                            <input className="input mt-1" value={newPac.apellido} onChange={e => setNewPac({ ...newPac, apellido: e.target.value })} placeholder="Apellido" required />
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold uppercase text-muted">Email</label>
-                            <input type="email" className="input mt-1" value={newPac.email} onChange={e => setNewPac({ ...newPac, email: e.target.value })} placeholder="email@ejemplo.com" required />
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold uppercase text-muted">DNI</label>
-                            <input className="input mt-1" value={newPac.dni} onChange={e => setNewPac({ ...newPac, dni: e.target.value })} placeholder="DNI" required />
-                        </div>
-                        <div className="md:col-span-4">
-                            <label className="text-xs font-bold uppercase text-muted">Teléfono (Opcional)</label>
-                            <input className="input mt-1" value={newPac.telefono} onChange={e => setNewPac({ ...newPac, telefono: e.target.value })} placeholder="11..." />
-                        </div>
-                        <button onClick={createPatientManual} disabled={creatingPac || !newPac.nombre || !newPac.apellido || !newPac.email || !newPac.dni} className="btn btn-primary w-full md:col-span-4 mt-2">
-                            {creatingPac ? "Registrando..." : "Crear Paciente"}
-                        </button>
-                    </div>
-                </section>
-            )}
-            {/* --- FIN Modal --- */}
-
             <section className="card">
                 <h2 className="h2">Crear turno manual</h2>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                    {/* Campo Paciente con opción de registro al lado */}
-                    <div className="flex flex-col">
-                        <label className="text-sm font-medium">Paciente</label>
-                        <div className="flex gap-2 items-center mt-1">
-                            <select className="input" value={patientEmail} onChange={(e) => setPatientEmail(e.target.value)}>
-                                <option value="">-- Elegir --</option>
-                                {patients.map((p) => <option key={p.patientId} value={p.userEmail}>{p.apellido}, {p.nombre}</option>)}
-                            </select>
-                            <button onClick={() => setIsRegisteringPatient(true)} className="btn btn-outline text-xs h-[42px] px-3 font-bold text-brand-primary" title="Registrar nuevo paciente">+</button>
+
+                    {/* Campo Paciente con búsqueda y botón + Nuevo */}
+                    <div className="md:col-span-1">
+                        <label className="block text-sm font-medium">Buscar Paciente (Nombre, DNI)</label>
+                        <div className="flex gap-2 mt-1">
+                            {/* Input de Búsqueda */}
+                            <input
+                                type="text"
+                                className="input"
+                                placeholder="Escriba para filtrar"
+                                value={filterText}
+                                onChange={e => setFilterText(e.target.value)}
+                            />
+                            {/* Botón para crear nuevo paciente */}
+                            <button onClick={() => setIsRegisteringPatient(true)} className="btn btn-outline text-xs h-[42px] px-3 font-bold text-green-700" title="Registrar nuevo paciente">+</button>
                         </div>
+                        {/* Select Filtrado */}
+                        <select
+                            className="input mt-2"
+                            size={filterText ? Math.min(6, filteredPacientesList.length + 1) : 1} // Muestra lista al escribir
+                            value={patientEmail}
+                            onChange={(e) => setPatientEmail(e.target.value)}
+                        >
+                            {filteredPacientesList.length === 0 ? (
+                                <option value="" disabled>No hay coincidencias. Usa "+".</option>
+                            ) : (
+                                <>
+                                    <option value="">-- Elegir --</option>
+                                    {filteredPacientesList.map((p) => <option key={p.patientId} value={p.userEmail}>{p.apellido}, {p.nombre} ({p.dni || 'N/A'})</option>)}
+                                </>
+                            )}
+                        </select>
                     </div>
 
                     <div>

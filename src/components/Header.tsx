@@ -50,6 +50,7 @@ export default function Header() {
         // Rutas de Profesional
         { href: "/profesional", label: "Estadísticas", roles: ["PROFESIONAL"] },
         { href: "/profesional/agenda", label: "Mi Agenda", roles: ["PROFESIONAL"] },
+        { href: "/profesional/mis-pacientes", label: "Mis Pacientes", roles: ["PROFESIONAL"] }, // <-- NUEVA RUTA
         { href: "/profesional/perfil", label: "Mi Perfil", roles: ["PROFESIONAL"] },
 
         // Rutas de Paciente
