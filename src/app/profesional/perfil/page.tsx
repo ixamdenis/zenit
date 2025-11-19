@@ -12,7 +12,7 @@ type Availability = {
     roomId: string | null;
 };
 type Service = {
-    id: string; // Cambiado de serviceId a id para consistencia
+    id: string;
     nombre: string;
     duracionMin: number;
     precioBase: number;
@@ -32,6 +32,7 @@ async function safeJson<T = any>(r: Response): Promise<{ ok: boolean; data: T | 
 export default function ProfesionalPerfilPage() {
 
     const [aliasBancario, setAliasBancario] = useState("");
+    const [telefono, setTelefono] = useState(""); // Nuevo estado
     const [availability, setAvailability] = useState<Availability[]>([]);
     const [services, setServices] = useState<Service[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
@@ -46,14 +47,14 @@ export default function ProfesionalPerfilPage() {
         setLoading(true);
         setMsg("");
         try {
-            // Ahora TODO viene de esta única llamada
             const r = await fetch("/api/profesional/perfil");
             const { data, error } = await safeJson(r);
             if (error) throw new Error(error);
 
             setAliasBancario(data.profile.aliasBancario ?? "");
+            setTelefono(data.profile.telefono ?? ""); // Cargar telefono
             setAvailability(data.availability ?? []);
-            setServices(data.services ?? []); // Servicios propios
+            setServices(data.services ?? []);
             setRooms(data.rooms ?? []);
             setNewAvail(prev => ({
                 ...prev,
@@ -72,16 +73,19 @@ export default function ProfesionalPerfilPage() {
 
     // --- Acciones ---
 
-    const handleSaveAlias = async () => {
+    const handleSaveDatosContacto = async () => {
         setMsg("");
         const r = await fetch("/api/profesional/perfil", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ aliasBancario: aliasBancario }),
+            body: JSON.stringify({
+                aliasBancario: aliasBancario,
+                telefono: telefono
+            }),
         });
         const { ok, error } = await safeJson(r);
-        if (!ok) setMsg(error ?? "Error al guardar alias");
-        else setMsg("Alias actualizado.");
+        if (!ok) setMsg(error ?? "Error al guardar datos");
+        else setMsg("Datos de contacto actualizados.");
     };
 
     const handleAddAvailability = () => {
@@ -154,12 +158,12 @@ export default function ProfesionalPerfilPage() {
 
             {msg && <div className="card bg-brand-warn/20 border-brand p-4 text-sm">{msg}</div>}
 
-            {/* 1. ALIAS */}
+            {/* 1. DATOS DE CONTACTO Y COBRO */}
             <section className="card">
-                <h2 className="h2">Alias Bancario</h2>
-                <p className="text-sm text-muted mt-1">Este alias verán los pacientes para enviarte los pagos.</p>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                    <div className="md:col-span-2">
+                <h2 className="h2">Datos de Contacto y Cobro</h2>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium">Alias Bancario</label>
                         <input
                             type="text"
                             value={aliasBancario}
@@ -167,8 +171,22 @@ export default function ProfesionalPerfilPage() {
                             className="input mt-1"
                             placeholder="mi.alias.mp"
                         />
+                        <p className="text-xs text-muted mt-1">Visible para los pacientes en el momento del pago.</p>
                     </div>
-                    <button onClick={handleSaveAlias} className="btn btn-primary">Guardar Alias</button>
+                    <div>
+                        <label className="block text-sm font-medium">Teléfono</label>
+                        <input
+                            type="text"
+                            value={telefono}
+                            onChange={(e) => setTelefono(e.target.value)}
+                            className="input mt-1"
+                            placeholder="Tu número"
+                        />
+                        <p className="text-xs text-muted mt-1">Visible solo para administración y recepción.</p>
+                    </div>
+                </div>
+                <div className="mt-4 flex justify-end">
+                    <button onClick={handleSaveDatosContacto} className="btn btn-primary">Guardar Datos</button>
                 </div>
             </section>
 

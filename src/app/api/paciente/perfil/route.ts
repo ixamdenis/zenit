@@ -6,8 +6,7 @@ import { getSession } from "@/lib/session";
 
 const prisma = new PrismaClient();
 
-// GET: Obtener datos actuales (reutilizamos lógica o usamos la existente, 
-// pero para edición específica es mejor tener un endpoint limpio)
+// GET: Obtener datos actuales
 export async function GET() {
     try {
         const session = await getSession();
@@ -36,9 +35,7 @@ export async function PUT(req: NextRequest) {
         if (!session) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
         const body = await req.json();
-        const { telefono, localidad, tieneObraSocial, obraSocialNombre, fotoUrl } = body;
-        // Nota: 'fotoUrl' asume que el front subió la imagen a un storage y manda el link.
-        // Si quieres subir archivos reales, necesitas un servicio como AWS S3 o Vercel Blob.
+        const { telefono, localidad, tieneObraSocial, obraSocialNombre, telefonoEmergencia } = body;
 
         const updated = await prisma.patientProfile.update({
             where: { userId: session.userId },
@@ -47,7 +44,7 @@ export async function PUT(req: NextRequest) {
                 localidad,
                 tieneObraSocial,
                 obraSocialNombre: tieneObraSocial ? obraSocialNombre : null,
-                // fotoUrl: fotoUrl // Descomentar si agregas el campo al esquema prisma
+                telefonoEmergencia: telefonoEmergencia // Guardar emergencia
             }
         });
 

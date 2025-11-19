@@ -1,83 +1,89 @@
+// src/app/admin/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import DangerousConfirmModal from "@/components/DangerousConfirmModal";
+import AdminEditUserModal from "@/components/AdminEditUserModal";
 
 type UserItem = {
     id: string;
     email: string;
     role: string;
     createdAt: string;
-    nombre: string;
-    apellido: string;
-    details: string;
+    nombreDisplay: string;
+    apellidoDisplay: string;
+    detailsDisplay: string;
+    patient?: any;
+    prof?: any;
+    recep?: any; // <-- Agregado
 };
 
 export default function AdminDashboardPage() {
+    // ... (Estados existentes: users, loading, msg, deleteModalOpen...)
     const [users, setUsers] = useState<UserItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
 
-    // Estado para el modal de borrado
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
+
+    // Modal Edición / Creación
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [userToEdit, setUserToEdit] = useState<UserItem | null>(null); // null = Crear nuevo
 
     const loadUsers = async () => {
         setLoading(true);
         try {
             const r = await fetch("/api/admin/users");
             const data = await r.json();
-            if (r.ok) {
-                setUsers(data.users);
-            } else {
-                setMsg(data.error || "Error cargando usuarios");
-            }
-        } catch (e) {
-            setMsg("Error de conexión");
-        } finally {
-            setLoading(false);
-        }
+            if (r.ok) setUsers(data.users);
+            else setMsg(data.error || "Error cargando usuarios");
+        } catch (e) { setMsg("Error de conexión"); }
+        finally { setLoading(false); }
     };
 
-    useEffect(() => {
-        loadUsers();
-    }, []);
+    useEffect(() => { loadUsers(); }, []);
 
-    const handleDeleteRequest = (u: UserItem) => {
-        setUserToDelete(u);
-        setDeleteModalOpen(true);
-    };
+    // Handlers
+    const handleDeleteRequest = (u: UserItem) => { setUserToDelete(u); setDeleteModalOpen(true); };
 
     const confirmDelete = async () => {
         if (!userToDelete) return;
         setDeleteModalOpen(false);
-        setMsg(""); // Limpiar mensajes
-
+        setMsg("");
         try {
             const r = await fetch(`/api/admin/users?id=${userToDelete.id}`, { method: "DELETE" });
-            const data = await r.json();
-            if (r.ok) {
-                setMsg(`Usuario ${userToDelete.email} eliminado correctamente.`);
-                loadUsers(); // Recargar lista
-            } else {
-                setMsg(`Error: ${data.error}`);
-            }
-        } catch (e) {
-            setMsg("Error al intentar eliminar.");
-        }
+            if (r.ok) { setMsg("Eliminado."); loadUsers(); }
+            else { const d = await r.json(); setMsg(d.error); }
+        } catch (e) { setMsg("Error al eliminar."); }
+    };
+
+    const handleEditRequest = (u: UserItem) => {
+        setUserToEdit(u);
+        setEditModalOpen(true);
+    };
+
+    const handleCreateRequest = () => {
+        setUserToEdit(null); // null indica MODO CREACIÓN
+        setEditModalOpen(true);
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-end">
+            <div className="flex flex-col sm:flex-row justify-between items-end sm:items-center gap-4">
                 <div>
                     <h1 className="h1 text-red-900">Panel de Super Admin</h1>
-                    <p className="text-muted">Gestión total del sistema. Ten cuidado.</p>
+                    <p className="text-muted">Gestión de usuarios y empleados.</p>
                 </div>
-                <button onClick={loadUsers} className="btn btn-outline text-sm">Actualizar Lista</button>
+                <div className="flex gap-2">
+                    <button onClick={loadUsers} className="btn btn-outline text-sm">↻ Actualizar</button>
+                    <button onClick={handleCreateRequest} className="btn btn-primary text-sm shadow-md">
+                        + Nuevo Usuario
+                    </button>
+                </div>
             </div>
 
-            {msg && <div className="p-4 rounded-lg bg-gray-100 border border-gray-300 text-sm font-medium">{msg}</div>}
+            {msg && <div className="p-3 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 text-sm text-center">{msg}</div>}
 
             <section className="card overflow-hidden">
                 <div className="overflow-x-auto">
@@ -85,38 +91,32 @@ export default function AdminDashboardPage() {
                         <thead className="bg-gray-50 text-gray-500 uppercase font-medium">
                             <tr>
                                 <th className="p-3">Rol</th>
-                                <th className="p-3">Usuario / Email</th>
+                                <th className="p-3">Nombre / Email</th>
                                 <th className="p-3">Detalle</th>
-                                <th className="p-3">Registro</th>
                                 <th className="p-3 text-right">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
-                                <tr><td colSpan={5} className="p-4 text-center text-muted">Cargando base de datos...</td></tr>
+                                <tr><td colSpan={4} className="p-8 text-center text-muted">Cargando...</td></tr>
                             ) : users.map(u => (
                                 <tr key={u.id} className="hover:bg-gray-50 transition">
                                     <td className="p-3">
                                         <span className={`badge ${u.role === 'ADMIN' ? 'bg-red-100 text-red-800' :
                                                 u.role === 'PROFESIONAL' ? 'bg-blue-100 text-blue-800' :
-                                                    u.role === 'RECEPCION' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100'
+                                                    u.role === 'RECEPCION' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
                                             }`}>
                                             {u.role}
                                         </span>
                                     </td>
                                     <td className="p-3">
-                                        <div className="font-medium">{u.apellido}, {u.nombre}</div>
+                                        <div className="font-medium text-gray-900">{u.apellidoDisplay}, {u.nombreDisplay}</div>
                                         <div className="text-xs text-muted">{u.email}</div>
                                     </td>
-                                    <td className="p-3 text-gray-600">{u.details}</td>
-                                    <td className="p-3 text-gray-500">{new Date(u.createdAt).toLocaleDateString()}</td>
-                                    <td className="p-3 text-right">
-                                        <button
-                                            onClick={() => handleDeleteRequest(u)}
-                                            className="btn bg-white border-red-200 text-red-600 hover:bg-red-50 text-xs py-1 px-3"
-                                        >
-                                            Eliminar
-                                        </button>
+                                    <td className="p-3 text-gray-600 text-xs md:text-sm">{u.detailsDisplay}</td>
+                                    <td className="p-3 text-right space-x-2">
+                                        <button onClick={() => handleEditRequest(u)} className="text-blue-600 hover:underline font-medium">Editar</button>
+                                        <button onClick={() => handleDeleteRequest(u)} className="text-red-600 hover:underline">Borrar</button>
                                     </td>
                                 </tr>
                             ))}
@@ -125,11 +125,22 @@ export default function AdminDashboardPage() {
                 </div>
             </section>
 
-            {/* Modal de Seguridad */}
+            {/* Modal Edición / Creación */}
+            <AdminEditUserModal
+                isOpen={editModalOpen}
+                user={userToEdit}
+                onClose={() => setEditModalOpen(false)}
+                onSuccess={() => {
+                    setMsg(userToEdit ? "Usuario actualizado." : "Usuario creado exitosamente.");
+                    loadUsers();
+                }}
+            />
+
+            {/* Modal Borrado */}
             <DangerousConfirmModal
                 isOpen={deleteModalOpen}
-                title={`¿Eliminar a ${userToDelete?.nombre} ${userToDelete?.apellido}?`}
-                description={`Estás a punto de borrar al usuario ${userToDelete?.email} y TODOS sus datos asociados (Turnos, Historial, Pagos, Perfiles). Esta acción es irreversible y podría afectar la integridad de datos históricos.`}
+                title={`¿Eliminar a ${userToDelete?.nombreDisplay}?`}
+                description="Esta acción borrará todos los datos (turnos, historial, perfil) asociados."
                 confirmKeyword="ELIMINAR"
                 onClose={() => setDeleteModalOpen(false)}
                 onConfirm={confirmDelete}

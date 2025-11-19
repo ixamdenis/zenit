@@ -21,10 +21,11 @@ export async function POST(req: NextRequest) {
             fechaNacimiento,
             // Datos de Paciente
             dni,
-            telefono,
+            telefono, // Se usa para Paciente y ahora también para Profesional
             localidad,
             tieneObraSocial,
             obraSocialNombre,
+            hasNoEmail, // Flag para usuario DNI
             // Datos de Profesional
             especialidad,
             matriculaProvincial,
@@ -35,30 +36,43 @@ export async function POST(req: NextRequest) {
         } = body;
 
         // --- Validación de Entrada ---
-        if (!email || !password || !nombre || !apellido || !role) {
-            return NextResponse.json({ error: "Email, contraseña, nombre, apellido y rol son requeridos" }, { status: 400 });
+        if (!password || !nombre || !apellido || !role) {
+            return NextResponse.json({ error: "Faltan datos obligatorios." }, { status: 400 });
         }
         if (password.length < 6) {
             return NextResponse.json({ error: "La contraseña debe tener al menos 6 caracteres" }, { status: 400 });
         }
         if (role !== Role.PACIENTE && role !== Role.PROFESIONAL) {
-            return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
+            return NextResponse.json({ error: "Rol inválido para registro público" }, { status: 400 });
+        }
+
+        // Validar Email vs DNI
+        if (role === Role.PACIENTE && hasNoEmail && !dni) {
+            return NextResponse.json({ error: "DNI requerido si no tiene email" }, { status: 400 });
+        }
+        if (!hasNoEmail && !email) {
+            return NextResponse.json({ error: "Email requerido" }, { status: 400 });
+        }
+
+        // Determinar email final
+        let finalEmail = email ? email.toLowerCase() : "";
+        if (role === Role.PACIENTE && hasNoEmail) {
+            finalEmail = `dni-${dni.replace(/[^0-9]/g, '')}@nodireccion.zenit`;
         }
 
         // --- Verificar si el usuario ya existe ---
         const existingUser = await prisma.user.findUnique({
-            where: { email: email.toLowerCase() },
+            where: { email: finalEmail },
         });
 
         if (existingUser) {
-            return NextResponse.json({ error: "El email ya está en uso" }, { status: 409 });
+            return NextResponse.json({ error: "El usuario (email o DNI) ya existe" }, { status: 409 });
         }
 
         // --- Verificar Código de Profesional ---
         if (role === Role.PROFESIONAL) {
             const masterCode = process.env.ZENIT_PROFESSIONAL_CODE;
             if (!masterCode) {
-                console.error("Error de configuración: ZENIT_PROFESSIONAL_CODE no está definido");
                 return NextResponse.json({ error: "Error de configuración del servidor." }, { status: 500 });
             }
             if (!zenitCode || zenitCode !== masterCode) {
@@ -77,9 +91,11 @@ export async function POST(req: NextRequest) {
             // 1. Crear el Usuario
             const user = await tx.user.create({
                 data: {
-                    email: email.toLowerCase(),
+                    email: finalEmail,
                     password: hashedPassword,
                     role: role,
+                    isDNIUser: !!hasNoEmail,
+                    mustChangePassword: false
                 },
             });
 
@@ -109,6 +125,7 @@ export async function POST(req: NextRequest) {
                         matriculaProvincial: matriculaProvincial,
                         matriculaNacional: matriculaNacional,
                         aliasBancario: aliasBancario,
+                        telefono: telefono // <--- GUARDAMOS EL TELEFONO DEL PROFESIONAL
                     },
                 });
             }
@@ -116,7 +133,6 @@ export async function POST(req: NextRequest) {
             return user;
         });
 
-        // Excluir la contraseña del objeto de respuesta
         const { password: _, ...userWithoutPassword } = newUser;
 
         return NextResponse.json({

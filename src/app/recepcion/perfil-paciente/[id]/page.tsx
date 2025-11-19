@@ -17,6 +17,7 @@ interface PatientProfileData {
     userEmail: string;
     isDNIUser: boolean;
     userCreatedAt: string;
+    telefonoEmergencia: string | null; // Campo nuevo
 }
 
 export default function PatientProfilePage() {
@@ -28,19 +29,15 @@ export default function PatientProfilePage() {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        // --- GUARDIA CLAVE: Sólo cargar si el ID es un string válido y no vacío ---
         if (!patientId || typeof patientId !== 'string' || patientId.length === 0) {
-            // Si no hay ID, detenemos el loading y salimos para evitar la llamada prematura
             setLoading(false);
             return;
         }
-        // --------------------------------------------------------------------------
 
         const fetchProfile = async () => {
             setLoading(true);
             setError(null);
             try {
-                // Aquí el patientId ya está garantizado como un string válido
                 const r = await fetch(`/api/paciente/perfil/${patientId}`);
                 const { patient, error: apiError } = await r.json();
 
@@ -73,26 +70,45 @@ export default function PatientProfilePage() {
                 Registrado desde: {new Date(profile.userCreatedAt).toLocaleDateString()}
             </p>
 
-            <div className="card space-y-4">
-                <h2 className="h2 border-b pb-2">Datos de Contacto y Login</h2>
-                <p><strong>Email:</strong> {profile.userEmail}</p>
-                <p><strong>DNI:</strong> {profile.dni || 'N/A'}</p>
-                <p><strong>Teléfono:</strong> {profile.telefono || 'N/A'}</p>
-                <p>
-                    <strong>Login por DNI:</strong> {isDNIUserText}
-                    <span className="badge ml-2 bg-blue-100 text-blue-800">
-                        Usuario: {loginIdentifier}
-                    </span>
-                </p>
-            </div>
+            <div className="grid md:grid-cols-2 gap-6">
+                {/* Columna 1: Contacto */}
+                <div className="space-y-4">
+                    <div className="card space-y-3 border-l-4 border-l-brand-primary">
+                        <h2 className="h2 border-b pb-2">Contacto</h2>
+                        <p><strong>Teléfono:</strong> {profile.telefono || 'N/A'}</p>
+                        <p><strong>Email:</strong> {profile.userEmail}</p>
+                        <p><strong>Localidad:</strong> {profile.localidad || 'N/A'}</p>
 
-            <div className="card space-y-4">
-                <h2 className="h2 border-b pb-2">Información Médica y Personal</h2>
-                <p><strong>Fecha Nac.:</strong> {profile.fechaNacimiento ? new Date(profile.fechaNacimiento).toLocaleDateString() : 'N/A'}</p>
-                <p><strong>Localidad:</strong> {profile.localidad || 'N/A'}</p>
-                <p>
-                    <strong>Obra Social:</strong> {profile.tieneObraSocial ? profile.obraSocialNombre || 'Sí, nombre no especificado' : 'No'}
-                </p>
+                        {/* Dato de emergencia resaltado */}
+                        <div className="mt-4 pt-2 border-t border-red-100">
+                            <p className="text-red-800 font-semibold">
+                                🚑 Emergencia: <span className="text-black font-normal">{profile.telefonoEmergencia || 'No especificado'}</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="card space-y-3">
+                        <h2 className="h2 border-b pb-2">Datos de Sistema</h2>
+                        <p>
+                            <strong>Login por DNI:</strong> {isDNIUserText}
+                        </p>
+                        <p>
+                            <strong>Usuario:</strong> {loginIdentifier}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Columna 2: Datos Personales */}
+                <div className="space-y-4">
+                    <div className="card space-y-3">
+                        <h2 className="h2 border-b pb-2">Información Personal</h2>
+                        <p><strong>DNI:</strong> {profile.dni || 'N/A'}</p>
+                        <p><strong>Fecha Nac.:</strong> {profile.fechaNacimiento ? new Date(profile.fechaNacimiento).toLocaleDateString() : 'N/A'}</p>
+                        <p>
+                            <strong>Obra Social:</strong> {profile.tieneObraSocial ? profile.obraSocialNombre || 'Sí, nombre no especificado' : 'No'}
+                        </p>
+                    </div>
+                </div>
             </div>
 
             <div className="flex justify-start">

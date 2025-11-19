@@ -39,6 +39,7 @@ model User {
   isDNIUser          Boolean             @default(false)
   patient   PatientProfile?
   prof      ProfessionalProfile?
+  recep              ReceptionProfile?
 }
 
 model PatientProfile {
@@ -55,6 +56,7 @@ model PatientProfile {
   localidad        String?
   tieneObraSocial  Boolean?      @default(false)
   obraSocialNombre String?
+  telefonoEmergencia String?
 }
 
 model ProfessionalProfile {
@@ -73,6 +75,21 @@ model ProfessionalProfile {
   aliasBancario       String?
   // --- CAMBIO: Relación con sus propios servicios ---
   services            ProfessionalService[]
+  telefono            String?
+}
+
+model ReceptionProfile {
+  id            String   @id @default(cuid())
+  user          User     @relation(fields: [userId], references: [id])
+  userId        String   @unique
+  
+  nombre        String
+  apellido      String
+  dni           String?  // Para registro de empleada
+  telefono      String?
+  direccion     String?
+  aliasCbu      String?  // Para pago de sueldos
+  fechaIngreso  DateTime? @default(now())
 }
 
 // --- CAMBIO: Nuevo modelo para servicios por profesional ---

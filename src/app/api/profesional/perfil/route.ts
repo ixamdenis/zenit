@@ -28,7 +28,6 @@ async function getProProfile(session: any) {
     return prisma.professionalProfile.findUnique({
         where: { userId: session.userId },
         include: {
-            // Incluimos los servicios en la búsqueda del perfil
             services: {
                 orderBy: { nombre: 'asc' }
             }
@@ -54,6 +53,7 @@ export async function GET() {
         return NextResponse.json({
             profile: {
                 aliasBancario: pro.aliasBancario,
+                telefono: pro.telefono // <-- Devolver telefono
             },
             availability: availability.map(a => ({
                 id: a.id,
@@ -63,7 +63,6 @@ export async function GET() {
                 roomName: a.room?.nombre ?? 'Sin asignar',
                 roomId: a.roomId ?? null
             })),
-            // Devolvemos los servicios propios
             services: pro.services.map(s => ({
                 id: s.id,
                 nombre: s.nombre,
@@ -79,10 +78,10 @@ export async function GET() {
     }
 }
 
-
-// POST (Guardar Alias y Horarios)
+// POST (Guardar Alias, Teléfono y Horarios)
 type ProfileBody = {
     aliasBancario?: string;
+    telefono?: string;
     availability?: {
         dayOfWeek: number;
         startTime: string;
@@ -94,16 +93,20 @@ type ProfileBody = {
 export async function POST(req: NextRequest) {
     try {
         const session = await getSession();
-        // Buscamos perfil simple para el update
         const pro = await prisma.professionalProfile.findUnique({ where: { userId: session?.userId } });
         if (!pro || session?.role !== Role.PROFESIONAL) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
         const body = (await req.json()) as ProfileBody;
 
-        if (body.aliasBancario !== undefined) {
+        // Actualizar datos de contacto si vienen
+        const updateData: any = {};
+        if (body.aliasBancario !== undefined) updateData.aliasBancario = body.aliasBancario || null;
+        if (body.telefono !== undefined) updateData.telefono = body.telefono || null;
+
+        if (Object.keys(updateData).length > 0) {
             await prisma.professionalProfile.update({
                 where: { id: pro.id },
-                data: { aliasBancario: body.aliasBancario || null }
+                data: updateData
             });
         }
 
@@ -139,7 +142,7 @@ export async function POST(req: NextRequest) {
                 };
             });
 
-            // Verificar solapamientos dentro de las nuevas disponibilidades
+            // Verificar solapamientos propios
             for (let i = 0; i < normalized.length; i++) {
                 for (let j = i + 1; j < normalized.length; j++) {
                     const a = normalized[i];
@@ -154,7 +157,7 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // Verificar solapamientos con otros profesionales en cada consultorio
+            // Verificar solapamientos con otros
             const uniqueCombos = Array.from(new Map(normalized.map(n => [`${n.roomId}-${n.dayOfWeek}`, { roomId: n.roomId, dayOfWeek: n.dayOfWeek }])).values());
             const conflictsByKey = new Map<string, any[]>();
             for (const combo of uniqueCombos) {

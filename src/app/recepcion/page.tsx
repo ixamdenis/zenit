@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { ProfessionalService } from "@prisma/client";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import allLocales from '@fullcalendar/core/locales-all';
 import Link from "next/link";
 
 // --- HELPERS Y UTILS ---
@@ -259,8 +258,10 @@ export default function RecepcionPage() {
     const [services, setServices] = useState<ProfessionalService[]>([]);
 
     // Estado del calendario (Eventos)
-    // Usamos 'any[]' para que coincida con la estructura de eventos de FullCalendar
     const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+
+    // --- CORRECCIÓN: Ref para evitar el loop de requests infinitos ---
+    const lastFetchRange = useRef<string>("");
 
     // Estados de UI y búsqueda
     const [isRegistering, setIsRegistering] = useState(false);
@@ -327,20 +328,24 @@ export default function RecepcionPage() {
         fetchData();
     }, [fetchPacientes]);
 
-    // Lógica del Calendario: Cargar turnos cuando cambia el rango visible
-    const handleDatesSet = async (arg: any) => {
+    // --- CORRECCIÓN: useCallback para estabilizar la función y evitar re-renders ---
+    const handleDatesSet = useCallback(async (arg: any) => {
         const startISO = arg.start.toISOString();
         const endISO = arg.end.toISOString();
 
-        // Usamos un flag de loading local o global si queremos mostrar spinner sobre el calendario
-        // Por ahora usamos console para debug o el loading global si es muy lento
-        // setLoading(true); 
+        // Creamos una clave única para este rango
+        const rangeKey = `${startISO}_${endISO}`;
+
+        // Si ya pedimos este rango recientemente (y no ha cambiado), evitamos la llamada
+        if (lastFetchRange.current === rangeKey) {
+            return;
+        }
+        lastFetchRange.current = rangeKey;
 
         try {
             const qs = new URLSearchParams({
                 from: startISO,
                 to: endISO
-                // Aquí se podrían agregar filtros globales de profesional si existieran en la UI
             });
 
             const r = await fetch(`/api/appointments/list?${qs.toString()}`);
@@ -351,7 +356,6 @@ export default function RecepcionPage() {
                     id: a.id,
                     start: a.startAt,
                     end: a.endAt,
-                    // extendedProps guarda la data para el renderizado custom
                     extendedProps: {
                         patientName: a.patientName,
                         professionalName: a.professionalName,
@@ -359,21 +363,18 @@ export default function RecepcionPage() {
                         isPaid: a.paymentStatus === 'PAID',
                         estado: a.estado
                     },
-                    // Propiedades estándar de fallback (aunque usamos renderEventContent)
                     title: a.patientName,
                     backgroundColor: 'transparent',
                     borderColor: 'transparent',
                     textColor: 'black',
-                    classNames: ['cursor-pointer'] // Clase para indicar clic
+                    classNames: ['cursor-pointer']
                 }));
                 setCalendarEvents(mappedEvents);
             }
         } catch (e) {
             console.error("Error cargando rango calendario", e);
-        } finally {
-            // setLoading(false);
         }
-    };
+    }, []);
 
 
     // Cargar servicios y slots para el formulario manual
@@ -440,13 +441,9 @@ export default function RecepcionPage() {
             const res = await r.json();
             if (r.ok) {
                 setMsg(`Turno con ${res.appointment.professionalService.nombre} creado con éxito.`);
-                // Forzamos refresco del calendario simulando un cambio de fecha o recargando la página si es necesario
-                // Una forma simple es disparar de nuevo handleDatesSet si tuviéramos acceso a la ref del calendario, 
-                // pero recargar la página o limpiar el form es buen feedback inmediato.
                 setNewAppointment({ ...newAppointment, time: "" });
-                // Nota: El calendario no se actualiza automáticamente aquí a menos que refetchees. 
-                // Como handleDatesSet depende del estado interno de FullCalendar, lo ideal sería refetchear manualmente.
-                // Por simplicidad en este MVP, el usuario verá el turno si navega o refresca.
+                // Limpiamos el ref para forzar recarga del calendario al recargar la página
+                lastFetchRange.current = "";
                 window.location.reload();
             } else {
                 setMsg(res.error || "Error al crear turno");
@@ -654,7 +651,6 @@ export default function RecepcionPage() {
                         const props = info.event.extendedProps;
                         const msg = `Turno: ${props.patientName}\nServicio: ${props.serviceName}\nEstado Pago: ${props.isPaid ? "PAGADO" : "PENDIENTE"}`;
                         alert(msg);
-                        // Aquí podrías redirigir a la página de pagos o abrir un modal de detalle
                     }}
                 />
             </section>

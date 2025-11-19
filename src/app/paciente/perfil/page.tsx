@@ -17,7 +17,8 @@ export default function MiPerfilPage() {
         telefono: "",
         localidad: "",
         tieneObraSocial: false,
-        obraSocialNombre: ""
+        obraSocialNombre: "",
+        telefonoEmergencia: "" // Nuevo campo
     });
 
     useEffect(() => {
@@ -35,7 +36,8 @@ export default function MiPerfilPage() {
                         telefono: data.telefono || "",
                         localidad: data.localidad || "",
                         tieneObraSocial: data.tieneObraSocial || false,
-                        obraSocialNombre: data.obraSocialNombre || ""
+                        obraSocialNombre: data.obraSocialNombre || "",
+                        telefonoEmergencia: data.telefonoEmergencia || ""
                     });
                 }
             })
@@ -55,7 +57,8 @@ export default function MiPerfilPage() {
                     telefono: form.telefono,
                     localidad: form.localidad,
                     tieneObraSocial: form.tieneObraSocial,
-                    obraSocialNombre: form.obraSocialNombre
+                    obraSocialNombre: form.obraSocialNombre,
+                    telefonoEmergencia: form.telefonoEmergencia
                 })
             });
             const data = await r.json();
@@ -120,6 +123,20 @@ export default function MiPerfilPage() {
                             value={form.localidad}
                             onChange={e => setForm({ ...form, localidad: e.target.value })}
                         />
+                    </div>
+                </div>
+
+                {/* Campo de emergencia destacado */}
+                <div className="grid grid-cols-1">
+                    <div>
+                        <label className="block text-sm font-bold text-red-700">Teléfono de Emergencia</label>
+                        <input
+                            className="input mt-1 border-red-100 focus:border-red-300"
+                            value={form.telefonoEmergencia}
+                            onChange={e => setForm({ ...form, telefonoEmergencia: e.target.value })}
+                            placeholder="Número de familiar o allegado"
+                        />
+                        <p className="text-xs text-muted mt-1">A quién llamar en caso de urgencia.</p>
                     </div>
                 </div>
 
